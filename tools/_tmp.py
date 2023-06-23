@@ -1,16 +1,53 @@
-def create_file(file_name: str, content: str) -> None:
+# coding=utf-8
+import time
+
+from bs4 import BeautifulSoup, Comment
+from selenium import webdriver
+from webdriver_manager.chrome import ChromeDriverManager
+
+from tools.summarize_text import summarize_text
+
+
+def get_text_from_website(url: str, len_summary: int | None = None) -> str:
     """
-    Create a file with the given name and content.
+    Get the text content from the given URL, summarized in a certain number of characters.
 
     Example:
-        >>> create_file("hello.txt", "Hello World")
+        >>> get_text_from_website("https://en.wikipedia.org/wiki/Paris", len_summary=500)
 
     Args:
-        file_name (str): the path and name of the file to create.
-        content (str): the content to write to the file.
+        url (str): the url.
+        len_summary (int): the length of the summary. If None, the full text is returned.
 
     Returns:
-        None
+        str: the text content at the given url.
     """
-    with open(file_name, 'w') as f:
-        f.write(content)
+    driver = webdriver.Chrome()
+    # driver = webdriver.Chrome(executable_path=ChromeDriverManager().install())
+    driver.get(url)
+
+    # Wait for the page to load
+    time.sleep(5)  # Adjust this value based on the complexity of the website or your internet speed
+
+    # Retrieve the page source and parse it with BeautifulSoup
+    html: str = driver.page_source
+    soup: BeautifulSoup = BeautifulSoup(html, 'html.parser')
+
+    # Find and extract all visible text
+    texts: list[str] = soup.findAll(text=True)
+
+    def visible_text(element: any) -> bool:
+        if element.parent.name in ['style', 'script', '[document]', 'head', 'title']:
+            return False
+        elif isinstance(element, Comment):
+            return False
+        return True
+
+    visible_texts: list[str] = list(filter(visible_text, texts))
+
+    text: str = ' '.join(t.strip() for t in visible_texts)
+
+    if len_summary is None:
+        return text
+
+    return summarize_text(text, len_summary)

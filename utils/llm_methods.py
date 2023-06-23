@@ -140,14 +140,18 @@ class LLMMethods(ABC):
         return content
 
     @staticmethod
-    def sample_next_step(request: str, message_history: list[dict[str, str]], **parameters: any) -> str:
+    def sample_next_step(request: str, message_history: list[dict[str, str]], toolbox: ToolBox, **parameters: any) -> str:
         previous_steps = list()
+
+        actions = "\n".join(f"- {toolbox.get_schema_from_name(each_action)['description']}" for each_action in toolbox.get_all_tools())
+        action_section = f"Actions:\n{actions}\n===\n"
 
         if len(message_history) < 1:
             previous_steps.append(f"Request: {request}\n===\n")
-            previous_steps.append("What would be a reasonable first action considering the previous steps towards fulfilling the request above? Provide a one sentence "
-                                  "instruction.\n"
-                                  "Do not instruct multiple actions e.g. by combining actions with \"and\". Do not instruct dealing with more than one thing at a time "
+            previous_steps.append(action_section)
+            previous_steps.append("What would be a reasonable first action considering the available actions and previous steps towards fulfilling the request above? "
+                                  "Provide a one-sentence instruction that applies one action to the request at hand.\n"
+                                  "Do not use multiple actions (e.g. by combining actions with \"and\"). Do not instruct dealing with more than one thing at a time "
                                   "but deal with each thing in its own individual action.")
 
         else:
@@ -161,14 +165,15 @@ class LLMMethods(ABC):
                 previous_steps.append(each_step)
 
             previous_steps.append(f"Request: {request}\n===\n")
-            previous_steps.append(f"What would be a reasonable action for the next step towards fulfilling the request above considering the previous steps? Provide a "
-                                  f"one sentence instruction. Use the results of previous actions to inform your choice. Finalize the response if the intermediate "
-                                  f"results of the previous steps fulfill the request.\n"
-                                  "Do not instruct multiple actions e.g. by combining actions with \"and\". Do not instruct dealing with more than one thing at a time "
-                                  "but deal with each thing in one individual action. Do not repeat the last action, if it was successful. Provide only one sentence "
-                                  "describing the action. Do not provide a result. If the last action has failed, do not suggest the exact same action again but "
-                                  "instead retry variants once or twice. If variants of the action fail as well,"
-                                  "try a whole other approach instead.\n")
+            previous_steps.append(action_section)
+            previous_steps.append(f"What would be a reasonable action for the next step towards fulfilling the request considering the available actions and the "
+                                  f"previous steps above? Provide a one-sentence instruction that applies one action to the request at hand. Use the results of "
+                                  f"previous actions to inform your choice. Finalize the response if the intermediate results of the previous steps fulfill the "
+                                  f"request.\n"
+                                  "Do not instruct multiple actions (e.g. by combining actions with \"and\"). Do not instruct dealing with more than one thing at a time "
+                                  "but deal with each thing in one individual action. Do not repeat the last action, if it was successful. Do not provide a result. If "
+                                  "the last action has failed, do not suggest the exact same action again but instead retry variants once or twice. If variants of the "
+                                  "action fail as well, try a whole other approach instead.\n")
 
         prompt = "".join(previous_steps)
 

@@ -2,6 +2,7 @@
 import json
 import logging
 import types
+import colorama
 
 from utils.llm_methods import LLMMethods, ExtractionException
 from utils.logging_handler import logging_handlers
@@ -58,14 +59,14 @@ class PerpetualAgent:
         except Exception as e:
             creation_error = f"Creation of action failed: {e}"
             self.main_logger.error(creation_error)
-            # raise e
+            raise e
             return creation_error, False
 
         new_str = "" if new_tool_code is None else " (new)"
         truncated_arguments = ", ".join(f"str({k})={truncate(str(v), 50)!r}" for k, v in arguments.items())
         tool_name = schema['name']
         tool_call = f"{tool_name}({truncated_arguments})"
-        user_input = input(f"  Action{new_str}: {tool_call} [y/N]? ")
+        user_input = input(f"{colorama.Fore.YELLOW}  Action{new_str}: {tool_call} [y/N]? {colorama.Style.RESET_ALL}")
         if user_input != "y":
             reject = f"Action `{tool_call}` rejected by user."
             self.main_logger.info(reject)
@@ -109,7 +110,7 @@ class PerpetualAgent:
     def respond(self, main_request: str, step_memory: int = 100) -> str:
         improved_request = self.improve_request(main_request, model="gpt-3.5-turbo")
 
-        print(f"Improved request: {improved_request}\n")
+        print(f"{colorama.Fore.CYAN}{improved_request}{colorama.Style.RESET_ALL}\n")
 
         i = 1
         previous_steps = list()
@@ -123,10 +124,10 @@ class PerpetualAgent:
                 break
             """
             # step_description = LLMMethods.sample_next_step(improved_request, previous_steps, model="gpt-4", temperature=.2)
-            step_description = LLMMethods.sample_next_step(improved_request, previous_steps, model="gpt-3.5-turbo", temperature=.0)
+            step_description = LLMMethods.sample_next_step(improved_request, previous_steps, self.toolbox, model="gpt-3.5-turbo-16k-0613", temperature=.0)
 
             output_step = f"Step {i}:\n  {step_description}"
-            print(output_step)
+            print(f"{colorama.Fore.GREEN}{output_step}{colorama.Style.RESET_ALL}")
             self.main_logger.info(output_step)
 
             result, is_finalized = self._get_result(step_description, previous_steps)
@@ -136,7 +137,7 @@ class PerpetualAgent:
                 return final_response
 
             output_step = f"Result: {result}"
-            print(f"  {output_step}\n====================================\n")
+            print(f"{colorama.Fore.BLUE}  {output_step}{colorama.Style.RESET_ALL}\n====================================\n")
             self.main_logger.info(output_step)
 
             intermediate_results.append(result)
