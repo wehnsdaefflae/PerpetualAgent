@@ -81,7 +81,7 @@ class PerpetualAgent:
                 return result, True
 
             if new_tool_code is not None:
-                self.toolbox.save_tool_code(new_tool_code)
+                self.toolbox.save_tool_code(new_tool_code, False)
 
         except Exception as e:
             execution_error = f"Execution of action failed: {e}"

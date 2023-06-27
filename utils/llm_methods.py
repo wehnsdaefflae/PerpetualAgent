@@ -1,10 +1,14 @@
 # coding=utf-8
 import json
+import time
 import types
 from abc import ABC
 import logging
 
+import hyperdb
+import numpy
 import openai
+from hyperdb import hyper_SVM_ranking_algorithm_sort
 from openai.openai_object import OpenAIObject
 
 from utils import openai_function_schemata
@@ -22,17 +26,49 @@ for each_handler in handlers:
 
 def openai_chat(function_id: str, *args: any, **kwargs: any) -> OpenAIObject:
     while True:
-        try:
-            logger.info(f"Calling OpenAI API: {function_id}")
-            logger.debug(f"OpenAI API: args={args}, kwargs={kwargs}")
-            response = openai.ChatCompletion.create(*args, **kwargs)
-            return response
+        for i in range(5):
+            try:
+                logger.info(f"Calling OpenAI API: {function_id}")
+                logger.debug(f"OpenAI API: args={args}, kwargs={kwargs}")
+                response = openai.ChatCompletion.create(*args, **kwargs)
+                return response
 
-        except (openai.error.RateLimitError,
-                openai.error.APIError,
-                openai.error.ServiceUnavailableError) as e:
-            logger.error(f"OpenAI API error: {e}")
-            continue
+            except Exception as e:
+                logger.error(str(e))
+                msg = f"Error. Retrying chat completion {i + 1} of 5"
+                logger.error(msg)
+                print(msg)
+                time.sleep(1)
+                continue
+
+        input("Chat completion failed. Press enter to retry...")
+
+
+def get_embeddings(segments: list[str]) -> list[list[float]]:
+    model = "text-embedding-ada-002"  # max input tokens: 8191, dimensions: 1536
+    # model = "text-similarity-davinci-001"
+    # model = "text-similarity-curie-001"
+    # model = "text-similarity-babbage-001"
+    # model = "text-similarity-ada-001"
+
+    while True:
+        for i in range(5):
+            try:
+                result = openai.Embedding.create(
+                    input=segments,
+                    model=model,
+                )
+                return [record["embedding"] for record in result["data"]]
+
+            except Exception as e:
+                logger.error(str(e))
+                msg = f"Error. Retrying embedding {i+1} of 5"
+                logger.error(msg)
+                print(msg)
+                time.sleep(1)
+                continue
+
+        input("Embedding retrieval failed. Press enter to retry...")
 
 
 def print_stream(stream: OpenAIObject) -> str:
@@ -232,6 +268,33 @@ class LLMMethods(ABC):
         arguments_str = function_call["arguments"]
         arguments = json.loads(arguments_str)
         tool = all_tools[function_name]
+        return tool, arguments
+
+    @staticmethod
+    def select_tool_call_from_db(toolbox: ToolBox,
+                                 task_description: str,
+                                 message_history: list[dict[str, str]] | None = None,
+                                 **parameters: any) -> tuple[types.FunctionType, dict[str, any]] | None:
+
+        # get embedding for task_description
+        embedding, = get_embeddings([task_description])
+
+        # query for most similar function name
+        (tool_name,), (fitness,) = hyper_SVM_ranking_algorithm_sort(
+            toolbox.vector_db.vectors,
+            numpy.array(embedding),
+            top_k=1,
+            metric=toolbox.vector_db.similarity_metric
+        )
+
+        if fitness < .9:
+            return None
+
+        tool_schema = toolbox.get_schema_from_name(tool_name)
+        arguments = LLMMethods.extract_arguments(message_history, tool_schema, model="gpt-3.5-turbo-0613", **parameters)
+
+        all_tools = toolbox.get_all_tools()
+        tool = all_tools[tool_name]
         return tool, arguments
 
     @staticmethod

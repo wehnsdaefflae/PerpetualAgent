@@ -7,15 +7,20 @@ import ast
 import importlib.util
 import inspect
 
+import hyperdb
 from docstring_parser import parse, Docstring
 
+from utils.llm_methods import get_embeddings
 from utils.logging_handler import logging_handlers
 
 
 class ToolBox:
-    def __init__(self, tool_folder: str, tool_memory: int = 100):
+    def __init__(self, tool_folder: str, database_path: str | None = None, tool_memory: int = 100):
         self.tool_folder = tool_folder
         self.tool_memory = tool_memory
+        self.vector_db = hyperdb.HyperDB()
+        if database_path is not None:
+            self.vector_db.load(database_path)
 
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(logging.INFO)
@@ -36,12 +41,20 @@ class ToolBox:
         self.logger.info(f"Loaded {len(functions)} tools from {self.tool_folder}")
         return functions
 
-    def save_tool_code(self, code: str, file_name: str | None = None) -> None:
+    def save_tool_code(self, code: str, is_temp: bool) -> None:
         tool_name = self.get_name_from_code(code)
-        name = f"{tool_name}.py" if file_name is None else file_name
+        name = "_tmp.py" if is_temp else f"{tool_name}.py"
         self.logger.info(f"Saving tool {tool_name} to {name}")
-        with open(os.path.join(self.tool_folder, name), mode="x" if file_name is None else "w") as file:
+        with open(os.path.join(self.tool_folder, name), mode="w" if is_temp else "x") as file:
             file.write(code)
+
+    def save_tool_code_db(self, code: str, is_temp: bool) -> None:
+        self.save_tool_code(code, is_temp=is_temp)
+        if not is_temp:
+            description = self.get_docstring_description_from_code(code)
+            embedding, = get_embeddings([description])
+            tool_name = self.get_name_from_code(code)
+            self.vector_db.add_document(tool_name, embedding)
 
     @staticmethod
     def _type_to_schema(t: any) -> dict[str, any]:
@@ -254,7 +267,7 @@ class ToolBox:
             return file.read()
 
     def get_temp_tool_from_code(self, code: str) -> types.FunctionType:
-        self.save_tool_code(code, file_name="_tmp.py")
+        self.save_tool_code(code, True)
         name = self.get_name_from_code(code)
         specification = importlib.util.spec_from_file_location(name, location=os.path.join(self.tool_folder, "_tmp.py"))
         module = importlib.util.module_from_spec(specification)
