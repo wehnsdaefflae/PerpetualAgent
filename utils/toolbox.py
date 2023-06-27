@@ -15,17 +15,37 @@ from utils.logging_handler import logging_handlers
 
 
 class ToolBox:
-    def __init__(self, tool_folder: str, database_path: str | None = None, tool_memory: int = 100):
+    def __init__(self, tool_folder: str, database_path: str = "tool_database.pickle.gz", tool_memory: int = 100):
         self.tool_folder = tool_folder
         self.tool_memory = tool_memory
-        self.vector_db = hyperdb.HyperDB()
-        if database_path is not None:
-            self.vector_db.load(database_path)
+        self.database_path = database_path
+        self.vector_db = self._initialize_database(database_path)
 
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(logging.INFO)
         for each_handler in logging_handlers():
             self.logger.addHandler(each_handler)
+
+    def _initialize_database(self, database_path: str) -> hyperdb.HyperDB():
+        db = hyperdb.HyperDB()
+        if os.path.isfile(database_path):
+            db.load(database_path)
+
+            tool_names_from_db = sorted(db.documents)
+            tool_names = sorted(self.get_all_tools())
+
+            if tool_names_from_db == tool_names:
+                self.logger.info(f"Loading Database already initialized with {len(tool_names)} tools")
+                return db
+
+            db = hyperdb.HyperDB()
+
+        self.logger.info(f"Initializing database with {len(tool_names)} tools")
+        descriptions = [self.get_description_from_name(each_name) for each_name in tool_names]
+        embeddings = get_embeddings(descriptions)
+        db.add_documents(tool_names, vectors=embeddings)
+        db.save(database_path)
+        return db
 
     def get_all_tools(self) -> dict[str, types.FunctionType]:
         functions = dict()
@@ -55,6 +75,7 @@ class ToolBox:
             embedding, = get_embeddings([description])
             tool_name = self.get_name_from_code(code)
             self.vector_db.add_document(tool_name, embedding)
+            self.vector_db.save(self.database_path)
 
     @staticmethod
     def _type_to_schema(t: any) -> dict[str, any]:
