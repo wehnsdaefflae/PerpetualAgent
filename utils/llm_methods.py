@@ -275,14 +275,16 @@ class LLMMethods(ABC):
                                  message_history: list[dict[str, str]] | None = None,
                                  **parameters: any) -> tuple[types.FunctionType, dict[str, any]] | None:
 
-        # todo: make task description general. for example: "Describe a Python function that could be used to solve the task. Take care to: []"
         """
-        Provide a more extensive and detailed Google style docstring for the function above that makes clear in which particular cases the function can be applied. Include the sections "Example", "Args", and "Returns".
+        todo: make task description general. for example: "Describe a Python function that could be used to solve the task. Take care to
 
-        Don't mention the name of the function.
-        Don't mention individual use cases or contexts but provide a general and clear description so it is clear which use cases and contexts it applies to.
-        Don't describe the process as it is formalized in code.
-        Describe the function the code provides, do not describe how this function is achieved.
+        Provide a more extensive and detailed Google style docstring for the function above that makes clear in which particular cases the function can be applied.
+        Include the sections "Example", "Args", and "Returns".
+
+        Call nothing but the function in the Example section like so: ">>> function_name(<arguments>)" Do not show the result of the function call.
+        Don't mention the name of the function in the description (it's okay in the Example section).
+        Don't mention individual use cases or contexts but provide a general and clear description, so it is clear which use cases and contexts it applies to.
+        Describe the function the code provides, do not describe how this is achieved.
 
         Keep below 500 characters.
         """
@@ -321,7 +323,7 @@ class LLMMethods(ABC):
                   f"{tool_descriptions}\n"
                   f"=================\n\n")
 
-        # todo generate google style docstring separately from prompt above, take existing functions as examples
+        # todo generate google style docstring separately gpt-3.5-turbo from prompt above, take existing functions as examples
         instruction = "Implement a Python function that achieves the task described above. Provide a parametrized function that is general enough to be used in other " \
                       "contexts beyond the particular task at hand. " \
                       "Give it a name that is precise so as to later recognise what it does. Don't use one of the helper function names as a name for the function. " \
