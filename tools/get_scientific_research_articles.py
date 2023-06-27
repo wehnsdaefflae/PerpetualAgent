@@ -5,9 +5,7 @@ from urllib import parse
 
 def get_scientific_research_articles(query: str) -> list[dict[str, str]]:
     """
-    Fetches a list of scientific research articles based on a provided search query from the Semantic Scholar API. The query
-    can be any topic or keyword related to scientific research articles. The function is applicable in cases where users need
-    to retrieve information about research articles for a specific subject.
+    Fetches a list of scientific research articles based on a provided search query from the Semantic Scholar API. The query can be any topic or keyword related to scientific research articles. The function is applicable in cases where users need to retrieve information about research articles for a specific subject.
 
     Example:
         >>> get_scientific_research_articles("Artificial Intelligence")

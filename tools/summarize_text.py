@@ -4,9 +4,7 @@ import openai
 
 def summarize_text(text: str, len_summary: int, focus: str | None = None) -> str:
     """
-    Generates a summary of a provided text of a specified length and, optionally, with a specified focus.
-
-    The function can be applied in any context where summarizing large amounts of text is needed, such as abstract generation for academic papers, summarizing news articles, or creating concise reports from lengthy data.
+    Generates a summary of a provided text of a specified length and, optionally, with a specified focus. Can be applied in any context where summarizing large amounts of text is needed, such as abstract generation for academic papers, summarizing news articles, or creating concise reports from lengthy data.
 
     Example:
         >>> summarize_text("Paris is the capital and most populous city of France.", 500, focus="population")

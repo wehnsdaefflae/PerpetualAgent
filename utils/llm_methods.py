@@ -5,7 +5,6 @@ import types
 from abc import ABC
 import logging
 
-import hyperdb
 import numpy
 import openai
 from hyperdb import hyper_SVM_ranking_algorithm_sort
@@ -322,6 +321,7 @@ class LLMMethods(ABC):
                   f"{tool_descriptions}\n"
                   f"=================\n\n")
 
+        # todo generate google style docstring separately from prompt above, take existing functions as examples
         instruction = "Implement a Python function that achieves the task described above. Provide a parametrized function that is general enough to be used in other " \
                       "contexts beyond the particular task at hand. " \
                       "Give it a name that is precise so as to later recognise what it does. Don't use one of the helper function names as a name for the function. " \
