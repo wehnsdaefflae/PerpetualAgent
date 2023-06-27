@@ -4,17 +4,17 @@ import openai
 
 def finalize(request: str, intermediate_results: list[str]) -> str:
     """
-    Finalizes a request by summarizing intermediate results into a final response.
+    Generates a final response for a request by integrating the intermediate results. Applicable in cases where there's a need for parsing a sequence of intermediate responses derived from the initial request, synthesizing them into a meaningful final response.
 
     Example:
         >>> finalize("What is the result of 4 * 7 / 3?", ["Four times seven is 28", "28 divided by three equals approximately 9.3"])
 
     Args:
-        request (str): the original request.
-        intermediate_results (list[str]): the intermediate results.
+        request (str): The original request made by the user.
+        intermediate_results (list[str]): The list of intermediate responses to the request.
 
     Returns:
-        str: the final response.
+        str: The final synthesized response, derived from the intermediate results in relation to the original request.
     """
     intermediate_str = "\n\n".join(intermediate_results)
     prompt = (f"Intermediate results:\n"

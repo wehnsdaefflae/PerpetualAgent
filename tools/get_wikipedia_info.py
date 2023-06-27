@@ -4,16 +4,18 @@ import wikipedia
 
 def get_wikipedia_info(wikipedia_page_name: str) -> str:
     """
-    Get more information about a topic from Wikipedia.
+    This function retrieves a brief summary of a specified Wikipedia page.
 
     Example:
-        >>> get_wikipedia_info("Django")
+        >>> get_wikipedia_info("Python (programming language)")
 
     Args:
-        wikipedia_page_name (str): the name of the wikipedia article.
+        wikipedia_page_name (str): The title of the desired Wikipedia article.
 
     Returns:
-        str: a summary of the topic.
+        str: If the specified page exists, a string containing the summary of that Wikipedia page is returned.
+        In case of a disambiguation page, a list of possible options is returned for further specification.
+        If the page does not exist, the function suggests a similar existing page or notifies the user if no similar page can be found.
     """
     try:
         return wikipedia.summary(wikipedia_page_name, auto_suggest=False)

@@ -1,16 +1,16 @@
 # coding=utf-8
 def calculate(what: str) -> str:
     """
-    Calculate a mathematical expression in Python syntax.
+    Performs arithmetic operations on a given string that represents a mathematical expression. The expression should conform to Python syntax and be constituted of numbers and arithmetic operators (+, -, *, /, **, etc.).
 
     Example:
-        >>> calculate("4 * 7 / 3")
+        >>> calculate("2 + 3 * 4")
 
     Args:
-        what (str): the expression to calculate.
+        what (str): A string representation of a mathematical expression in Python syntax.
 
     Returns:
-        str: the result of the calculation.
+        str: The result of the evaluated expression as a string. If the evaluation fails (due to incorrect syntax or undefined operations), an error message will be returned.
     """
     try:
         return eval(what)

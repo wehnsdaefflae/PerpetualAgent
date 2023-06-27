@@ -276,6 +276,18 @@ class LLMMethods(ABC):
                                  message_history: list[dict[str, str]] | None = None,
                                  **parameters: any) -> tuple[types.FunctionType, dict[str, any]] | None:
 
+        # todo: make task description general. for example: "Describe a Python function that could be used to solve the task. Take care to: []"
+        """
+        Provide a more extensive and detailed Google style docstring for the function above that makes clear in which particular cases the function can be applied. Include the sections "Example", "Args", and "Returns".
+
+        Don't mention the name of the function.
+        Don't mention individual use cases or contexts but provide a general and clear description so it is clear which use cases and contexts it applies to.
+        Don't describe the process as it is formalized in code.
+        Describe the function the code provides, do not describe how this function is achieved.
+
+        Keep below 500 characters.
+        """
+
         # get embedding for task_description
         embedding, = get_embeddings([task_description])
 

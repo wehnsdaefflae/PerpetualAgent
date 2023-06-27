@@ -1,13 +1,16 @@
 def create_file(file_name: str, content: str) -> None:
     """
-    Create a file with the given name and content.
+    Generates a text file with a specified name and populates it with provided content.
+
+    Useful for cases requiring the dynamic creation of text-based files, such as for configuration files,
+    report generation, or data storage in simple formats like CSV or JSON.
 
     Example:
-        >>> create_file("hello.txt", "Hello World")
+        >>> create_file("example.txt", "Sample text content")
 
     Args:
-        file_name (str): the path and name of the file to create.
-        content (str): the content to write to the file.
+        file_name (str): Specifies the path and name for the file to be created.
+        content (str): String to be written into the file as its contents.
 
     Returns:
         None
