@@ -51,6 +51,7 @@ class PerpetualAgent:
 
         # take tool_arguments or function_description
         if tool_name is None:
+            print(f"{colorama.Fore.YELLOW}  New action:{colorama.Style.RESET_ALL}", end=" ")
             try:
                 new_tool_code = LLMMethods.make_tool_code(self.toolbox, function_description, message_history=previous_steps, model="gpt-4")
                 tool_name = self.toolbox.get_name_from_code(new_tool_code)
@@ -63,6 +64,7 @@ class PerpetualAgent:
                 return creation_error, False
 
         else:
+            print(f"{colorama.Fore.YELLOW}  Action:{colorama.Style.RESET_ALL}", end=" ")
             tool = self.toolbox.get_tool_from_name(tool_name)
             schema = self.toolbox.get_schema_from_name(tool_name)
 
@@ -74,10 +76,9 @@ class PerpetualAgent:
             self.main_logger.error(extraction_error)
             return extraction_error, False
 
-        new_str = "" if new_tool_code is None else " (new)"
         truncated_arguments = ", ".join(f"str({k})={truncate(str(v), 50)!r}" for k, v in arguments.items())
         tool_call = f"{tool_name}({truncated_arguments})"
-        user_input = input(f"{colorama.Fore.YELLOW}  Action{new_str}: {tool_call} [y/N]? {colorama.Style.RESET_ALL}")
+        user_input = input(f"{colorama.Fore.YELLOW}{tool_call} [y/N]? {colorama.Style.RESET_ALL}")
         if user_input != "y":
             reject = f"Action `{tool_call}` rejected by user."
             self.main_logger.info(reject)
