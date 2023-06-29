@@ -10,29 +10,30 @@ import inspect
 import hyperdb
 from docstring_parser import parse, Docstring
 
-from utils.llm_methods import get_embeddings
+from utils.basic_llm_calls import get_embeddings
 from utils.logging_handler import logging_handlers
 
 
 class ToolBox:
     def __init__(self, tool_folder: str, database_path: str = "tool_database.pickle.gz", tool_memory: int = 100):
-        self.tool_folder = tool_folder
-        self.tool_memory = tool_memory
-        self.database_path = database_path
-        self.vector_db = self._initialize_database(database_path)
-
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(logging.INFO)
         for each_handler in logging_handlers():
             self.logger.addHandler(each_handler)
 
+        self.tool_folder = tool_folder
+        self.tool_memory = tool_memory
+        self.database_path = database_path
+        self.vector_db = self._initialize_database(database_path)
+
     def _initialize_database(self, database_path: str) -> hyperdb.HyperDB():
         db = hyperdb.HyperDB()
+        tool_names = sorted(self.get_all_tools())
+
         if os.path.isfile(database_path):
             db.load(database_path)
 
             tool_names_from_db = sorted(db.documents)
-            tool_names = sorted(self.get_all_tools())
 
             if tool_names_from_db == tool_names:
                 self.logger.info(f"Loading Database already initialized with {len(tool_names)} tools")
@@ -41,7 +42,7 @@ class ToolBox:
             db = hyperdb.HyperDB()
 
         self.logger.info(f"Initializing database with {len(tool_names)} tools")
-        descriptions = [self.get_description_from_name(each_name) for each_name in tool_names]
+        descriptions = [self.get_docstring_description_from_name(each_name) for each_name in tool_names]
         embeddings = get_embeddings(descriptions)
         db.add_documents(tool_names, vectors=embeddings)
         db.save(database_path)
@@ -61,15 +62,15 @@ class ToolBox:
         self.logger.info(f"Loaded {len(functions)} tools from {self.tool_folder}")
         return functions
 
-    def save_tool_code(self, code: str, is_temp: bool) -> None:
+    def _save_tool_code(self, code: str, is_temp: bool) -> None:
         tool_name = self.get_name_from_code(code)
         name = "_tmp.py" if is_temp else f"{tool_name}.py"
         self.logger.info(f"Saving tool {tool_name} to {name}")
         with open(os.path.join(self.tool_folder, name), mode="w" if is_temp else "x") as file:
             file.write(code)
 
-    def save_tool_code_db(self, code: str, is_temp: bool) -> None:
-        self.save_tool_code(code, is_temp=is_temp)
+    def save_tool_code(self, code: str, is_temp: bool) -> None:
+        self._save_tool_code(code, is_temp=is_temp)
         if not is_temp:
             description = self.get_docstring_description_from_code(code)
             embedding, = get_embeddings([description])
@@ -155,6 +156,10 @@ class ToolBox:
                 return ast.get_docstring(node)  # type documentation seems to be wrong here
         raise ValueError("No docstring found in code.")
 
+    def get_docstring_description_from_name(self, name: str) -> str:
+        code = self.get_code_from_name(name)
+        return self.get_docstring_description_from_code(code)
+
     def get_docstring_description_from_code(self, code: str) -> str:
         tool_doc = self.get_docstring_from_code(code)
         parsed_doc = parse(tool_doc)
@@ -162,10 +167,7 @@ class ToolBox:
         tool_long_description = parsed_doc.long_description
         if tool_long_description is None:
             return tool_short_description
-        if len(tool_long_description) >= len(tool_short_description):
-            return tool_long_description
-        return tool_short_description
-
+        return tool_short_description + " " + tool_long_description
 
     def get_required_from_code(self, code: str) -> list[str]:
         module = ast.parse(code)

@@ -49,7 +49,8 @@ class PerpetualAgent:
         try:
             new_tool_code = None
 
-            tool_arguments = LLMMethods.select_tool_call(self.toolbox, step_description, message_history=previous_steps, model="gpt-3.5-turbo-0613")
+            tool_arguments = LLMMethods.select_tool_call(self.toolbox, step_description, message_history=previous_steps, model="gpt-3.5-turbo")
+            # take tool_arguments or function_description
             if tool_arguments is None:
                 tool_arguments, new_tool_code = self._make_tool(step_description, previous_steps)
 
@@ -98,7 +99,7 @@ class PerpetualAgent:
         schema = self.toolbox.get_schema_from_code(new_tool_code)
 
         try:
-            arguments = LLMMethods.extract_arguments(previous_steps, schema, prompt=step_description, model="gpt-3.5-turbo-0613")
+            arguments = LLMMethods.extract_arguments(previous_steps, schema, step_description, model="gpt-3.5-turbo-0613")
 
         except ExtractionException as e:
             self.main_logger.error(f"Information extraction failed: {e}")

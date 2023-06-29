@@ -4,9 +4,8 @@ import openai
 
 def common_sense(request: str) -> str:
     """
-    Generates a human-like response to a given request by leveraging a pre-trained language model. This function
-    can be used for a wide range of natural language understanding tasks, such as answering questions,
-    generating text, and more.
+    Generates a human-like response to a given request by leveraging a pre-trained language model. This function can be used for a wide range of natural language understanding
+    tasks, such as answering questions, generating text, and more.
 
     Example:
         >>> common_sense("What is the capital of France?")

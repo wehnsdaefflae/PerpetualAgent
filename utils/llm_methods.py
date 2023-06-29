@@ -1,6 +1,5 @@
 # coding=utf-8
 import json
-import time
 import types
 from abc import ABC
 import logging
@@ -8,11 +7,11 @@ import logging
 import numpy
 import openai
 from hyperdb import hyper_SVM_ranking_algorithm_sort
-from openai.openai_object import OpenAIObject
 
 from utils import openai_function_schemata
+from utils.basic_llm_calls import openai_chat, get_embeddings
 from utils.logging_handler import logging_handlers
-from utils.misc import extract_code_blocks
+from utils.misc import extract_code_blocks, extract_docstrings, insert_docstring
 from utils.toolbox import ToolBox
 
 logger = logging.getLogger(__name__)
@@ -23,64 +22,6 @@ for each_handler in handlers:
     logger.addHandler(each_handler)
 
 
-def openai_chat(function_id: str, *args: any, **kwargs: any) -> OpenAIObject:
-    while True:
-        for i in range(5):
-            try:
-                logger.info(f"Calling OpenAI API: {function_id}")
-                logger.debug(f"OpenAI API: args={args}, kwargs={kwargs}")
-                response = openai.ChatCompletion.create(*args, **kwargs)
-                return response
-
-            except Exception as e:
-                logger.error(str(e))
-                msg = f"Error. Retrying chat completion {i + 1} of 5"
-                logger.error(msg)
-                print(msg)
-                time.sleep(1)
-                continue
-
-        input("Chat completion failed. Press enter to retry...")
-
-
-def get_embeddings(segments: list[str]) -> list[list[float]]:
-    model = "text-embedding-ada-002"  # max input tokens: 8191, dimensions: 1536
-    # model = "text-similarity-davinci-001"
-    # model = "text-similarity-curie-001"
-    # model = "text-similarity-babbage-001"
-    # model = "text-similarity-ada-001"
-
-    while True:
-        for i in range(5):
-            try:
-                result = openai.Embedding.create(
-                    input=segments,
-                    model=model,
-                )
-                return [record["embedding"] for record in result["data"]]
-
-            except Exception as e:
-                logger.error(str(e))
-                msg = f"Error. Retrying embedding {i+1} of 5"
-                logger.error(msg)
-                print(msg)
-                time.sleep(1)
-                continue
-
-        input("Embedding retrieval failed. Press enter to retry...")
-
-
-def print_stream(stream: OpenAIObject) -> str:
-    full_content = list()
-    for chunk in stream:
-        delta = chunk["choices"][0]["delta"]
-        msg = delta.get("content", "")
-        full_content.append(msg)
-        print(msg, end="")
-    print()
-    return "".join(full_content)
-
-
 class ExtractionException(Exception):
     pass
 
@@ -89,7 +30,7 @@ class LLMMethods(ABC):
     openai.api_key_path = "resources/openai_api_key.txt"
 
     @staticmethod
-    def extract_arguments(previous_messages: list[dict[str, str]], tool_schema: dict[str, any], prompt: str | None = None, **parameters: any) -> dict[str, any]:
+    def extract_arguments(previous_messages: list[dict[str, str]], tool_schema: dict[str, any], prompt: str, **parameters: any) -> dict[str, any]:
         response = openai_chat(
             f"extracting with `{tool_schema['name']}`",
             **parameters,
@@ -235,10 +176,10 @@ class LLMMethods(ABC):
         return response
 
     @staticmethod
-    def select_tool_call(toolbox: ToolBox,
-                         task_description: str,
-                         message_history: list[dict[str, str]] | None = None,
-                         **parameters: any) -> tuple[types.FunctionType, dict[str, any]] | None:
+    def _select_tool_call(toolbox: ToolBox,
+                          task_description: str,
+                          message_history: list[dict[str, str]] | None = None,
+                          **parameters: any) -> tuple[types.FunctionType, dict[str, any]] | None:
 
         # todo: vectorize? con: losing api advantage, pro: unlimited number of tools
 
@@ -270,48 +211,61 @@ class LLMMethods(ABC):
         return tool, arguments
 
     @staticmethod
-    def select_tool_call_from_db(toolbox: ToolBox,
-                                 task_description: str,
-                                 message_history: list[dict[str, str]] | None = None,
-                                 **parameters: any) -> tuple[types.FunctionType, dict[str, any]] | None:
+    def describe_function(task_description: str, message_history: list[dict[str, any]] | None = None, **parameters: any) -> str:
+        # unify with `make_function_docstring`?
+        prompt = ("Describe a Python function that could be used to solve the task below. "
+                  "Take care to describe a general function such that this task is only one of many possible use cases. "
+                  "Describe it as if the function was part of a library that already existed. "
+                  "Do not mention any specifics that might be provided as function arguments. "
+                  "Do not mention the function by name. Describe optional arguments and return values. "
+                  "Do not provide function call or output examples. "
+                  "Do not mention individual use cases or contexts. "
+                  "Instead provide a general and clear description, so it becomes clear what the function achieves and what it can be used for. "
+                  "Do not describe how this is achieved. "
+                  "Keep below 500 characters.\n"
+                  "===\n"
+                  "Task:\n"
+                  f"{task_description}\n")
 
-        """
-        todo: make task description general. for example: "Describe a Python function that could be used to solve the task. Take care to
+        history = message_history or list()
+        response = LLMMethods.respond(prompt, history, function_id="describe_function", **parameters)
+        return response
 
-        Provide a more extensive and detailed Google style docstring for the function above that makes clear in which particular cases the function can be applied.
-        Include the sections "Example", "Args", and "Returns".
+    @staticmethod
+    def select_tool_call(toolbox: ToolBox,
+                         task_description: str,
+                         message_history: list[dict[str, str]] | None = None,
+                         **parameters: any) -> tuple[types.FunctionType, dict[str, any]] | None:
 
-        Call nothing but the function in the Example section like so: ">>> function_name(<arguments>)" Do not show the result of the function call.
-        Don't mention the name of the function in the description (it's okay in the Example section).
-        Don't mention individual use cases or contexts but provide a general and clear description, so it is clear which use cases and contexts it applies to.
-        Describe the function the code provides, do not describe how this is achieved.
+        parameters.pop("model", None)
 
-        Keep below 500 characters.
-        """
-
+        function_description = LLMMethods.describe_function(task_description, model="gpt-4", **parameters)
         # get embedding for task_description
-        embedding, = get_embeddings([task_description])
+        embedding, = get_embeddings([function_description])
 
         # query for most similar function name
-        (tool_name,), (fitness,) = hyper_SVM_ranking_algorithm_sort(
+        (document_index,), (fitness,) = hyper_SVM_ranking_algorithm_sort(
             toolbox.vector_db.vectors,
             numpy.array(embedding),
             top_k=1,
             metric=toolbox.vector_db.similarity_metric
         )
 
-        if fitness < .9:
+        tool_name = toolbox.vector_db.documents[document_index]
+
+        if fitness < .85:
+            # return function description for tool generation
             return None
 
         tool_schema = toolbox.get_schema_from_name(tool_name)
-        arguments = LLMMethods.extract_arguments(message_history, tool_schema, model="gpt-3.5-turbo-0613", **parameters)
+        arguments = LLMMethods.extract_arguments(message_history, tool_schema, task_description, model="gpt-3.5-turbo-0613", **parameters)
 
         all_tools = toolbox.get_all_tools()
         tool = all_tools[tool_name]
         return tool, arguments
 
     @staticmethod
-    def make_tool_code(toolbox: ToolBox, description: str, message_history: list[dict[str, str]] | None = None, **parameters: any) -> str:
+    def _make_tool_code(toolbox: ToolBox, description: str, message_history: list[dict[str, str]] | None = None, **parameters: any) -> str:
         all_tools = toolbox.get_all_tools()
         tool_description_lines = [toolbox.get_description_from_name(each_name) for each_name in all_tools]
         tool_descriptions = "\n".join(f"- {each_description}" for each_description in tool_description_lines)
@@ -342,3 +296,65 @@ class LLMMethods(ABC):
         response = LLMMethods.respond(prompt, history, function_id="make_tool_code", **parameters)
         code = extract_code_blocks(response)
         return code[0]
+
+    @staticmethod
+    def make_tool_code(toolbox: ToolBox, description: str, message_history: list[dict[str, str]] | None = None, **parameters: any) -> str:
+        code = LLMMethods.make_only_tool_code(toolbox, description, message_history, model="gpt-4", **parameters)
+        docstring = LLMMethods.make_function_docstring(code, model="gpt-3.5-turbo", **parameters)
+        combined = insert_docstring(code, docstring)
+        return combined
+
+    @staticmethod
+    def make_only_tool_code(toolbox: ToolBox, description: str, message_history: list[dict[str, str]] | None = None, **parameters: any) -> str:
+        all_tools = toolbox.get_all_tools()
+        tool_description_lines = [toolbox.get_description_from_name(each_name) for each_name in all_tools]
+        tool_descriptions = "\n".join(f"- {each_description}" for each_description in tool_description_lines)
+
+        prompt = (f"Task:\n"
+                  f"{description}\n"
+                  f"=================\n"
+                  f"Available helper functions:\n"
+                  f"{tool_descriptions}\n"
+                  f"=================\n\n")
+
+        # todo generate google style docstring separately gpt-3.5-turbo from prompt above, take existing functions as examples
+        instruction = "Implement a Python function that achieves the task described above. Provide a parametrized function that is general enough to be used in other " \
+                      "contexts beyond the particular task at hand. " \
+                      "Give names to the functions and its parameters that are precise so as to later recognise what they stand for. Don't use one of the helper function names " \
+                      "as a name for the function or for its parameters. " \
+                      "The function must be type hinted. " \
+                      "Call the available helper functions from the list above, whenever possible. Helper functions are imported from the tools module (e.g. for the calculate " \
+                      "tool: `from tools.calculate import calculate`). " \
+                      "Do not use placeholders or variables that the user needs to fill in (e.g. API keys). Make sure, the function works out-of-the-box, without any user " \
+                      "information, interaction, or modification." \
+                      "Respond with a single Python code block containing only the required imports as well as the function. Do not generate text outside of the " \
+                      "code block."
+
+        prompt += instruction
+
+        history = list() if message_history is None else list(message_history)
+
+        response = LLMMethods.respond(prompt, history, function_id="make_only_tool_code", **parameters)
+        code = extract_code_blocks(response)
+        return code[0]
+
+    @staticmethod
+    def make_function_docstring(code: str, **parameters: any) -> str:
+        # unify with the function query generation
+        prompt = (f"Generate a Google style docstring in triple quotation marks for the function below. The docstring must contain the sections \"Example\", \"Args\", "
+                  f"and \"Returns\".  Call the function in the Example section like so: `>>> function_name(<arguments>)` Provide only one example with arguments for a "
+                  f"representative use case. Do not show the result of the function call. " \
+                  f"Don't mention the name of the function in the description (it's only okay in the Example section). " \
+                  f"Don't mention individual use cases or contexts in the description. Instead describe the function the code provides to make clear which use cases "
+                  f"and contexts it applies to. Describe what the function achieves but not how this is achieved. " \
+                  f"Keep below 500 characters.\n"
+                  f"\n"
+                  f"```python\n"
+                  f"{code}\n"
+                  f"```")
+
+        history = list()
+
+        response = LLMMethods.respond(prompt, history, function_id="make_function_docstring", **parameters)
+        docstring = extract_docstrings(response)
+        return docstring[0]
