@@ -121,7 +121,8 @@ class PerpetualAgent:
                 break
             """
             # step_description = LLMMethods.sample_next_step(improved_request, previous_steps, model="gpt-4", temperature=.2)
-            step_description = LLMMethods.sample_next_step(improved_request, previous_steps, self.toolbox, model="gpt-3.5-turbo", temperature=.0)
+            step_description = LLMMethods.sample_next_step(improved_request, previous_steps, model="gpt-3.5-turbo", temperature=.0)
+            # step_description = LLMMethods._sample_next_step(improved_request, previous_steps, model="gpt-3.5-turbo", temperature=.0)
 
             output_step = f"Step {i}:\n  {step_description}"
             print(f"{colorama.Fore.GREEN}{output_step}{colorama.Style.RESET_ALL}")

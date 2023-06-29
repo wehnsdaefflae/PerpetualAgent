@@ -11,7 +11,7 @@ from hyperdb import hyper_SVM_ranking_algorithm_sort
 from utils import openai_function_schemata
 from utils.basic_llm_calls import openai_chat, get_embeddings
 from utils.logging_handler import logging_handlers
-from utils.misc import extract_code_blocks, extract_docstrings, insert_docstring
+from utils.misc import extract_code_blocks, format_docstring, insert_docstring, DocstringException
 from utils.toolbox import ToolBox
 
 logger = logging.getLogger(__name__)
@@ -116,21 +116,21 @@ class LLMMethods(ABC):
         return content
 
     @staticmethod
-    def sample_next_step(request: str, message_history: list[dict[str, str]], toolbox: ToolBox, **parameters: any) -> str:
-        previous_steps = list()
-
-        actions = "\n".join(f"- {toolbox.get_schema_from_name(each_action)['description']}" for each_action in toolbox.get_all_tools())
-        action_section = f"Available actions:\n{actions}\n===\n"
+    def sample_next_step(request: str, message_history: list[dict[str, str]], **parameters: any) -> str:
+        prompt = (f"Request: {request}\n"
+                  f"===\n"
+                  f"\n")
 
         if len(message_history) < 1:
-            previous_steps.append(f"Request: {request}\n===\n")
-            previous_steps.append(action_section)
-            previous_steps.append("Think step-by-step: What would be a reasonable first action from the available actions towards fulfilling the request above? "
-                                  "Provide a one-sentence instruction for a single simple action towards the request at hand.\n"
-                                  "Do not instruct dealing with more than one thing at a time but deal with one thing only.")
+            # prompt += (f"Think step-by-step: What would be a reasonable first action towards fulfilling the request above? "
+            #            f"Provide a one-sentence instruction for a single simple action towards the request at hand. Deal only with one thing at a time.")
+            prompt += (f"Assume there is a computer program that fulfills the request above when executed. What would be its first command to the computer? Provide a "
+                       f"one-sentence instruction in natural language for a single simple action leading towards the request at hand. Direct the command at the "
+                       f"computer.")
 
         else:
-            for i in range(0, len(message_history), 2):
+            previous_steps = list()
+            for i in range(0, len(message_history[-10:]), 2):
                 each_request, each_response = tuple(each_message["content"] for each_message in message_history[i:i + 2])
                 each_step = (f"Step {i // 2 + 1}:\n"
                              f"  Action: {each_request.strip()}\n"
@@ -139,37 +139,35 @@ class LLMMethods(ABC):
 
                 previous_steps.append(each_step)
 
-            previous_steps.append(f"Request: {request}\n===\n")
-            previous_steps.append(action_section)
-            previous_steps.append(f"Think step-by-step: What would be a reasonable next action from the available actions towards fulfilling the request considering the "
-                                  f"previous steps above? Provide a one-sentence instruction for a single simple action towards the request at hand. Use the actions and "
-                                  f"their results from previous steps to inform your choice. Finalize the response if the intermediate results of the previous steps fulfill the "
-                                  f"request.\n"
-                                  "Do not instruct dealing with more than one thing at a time but deal with one thing only. Only provide the action, not the whole step or the "
-                                  "result. the last action has failed, do not instruct the exact same action but instead retry variants once or twice. If variants of the "
-                                  "action fail as well, try a whole different approach instead.\n")
+            prompt += "\n".join(previous_steps)
+            # prompt += (f"Think step-by-step: What would be a reasonable next action towards fulfilling the request considering the previous steps above? "
+            #            f"Provide a one-sentence instruction for a single simple action towards the request at hand. Use the actions and their results from "
+            #            f"previous steps to inform your choice. Finalize the response if the intermediate results of the previous steps fulfill the request.\n"
+            #            f"\n"
+            #            "Deal with one thing at a time. Only provide the action, not the whole step or the result. If the last action has failed, do not "
+            #            "instruct the exact same action but instead retry variants once or twice. If variants of the action fail as well, try a whole "
+            #            "different approach instead.")
+            prompt += (f"Assume there is a computer program that fulfills the request above when executed. What would be the next command to the computer given the "
+                       f"previous steps above? Provide a one-sentence instruction in natural language for a single simple action towards the request at hand. Finalize "
+                       f"the response if the intermediate results of the previous steps fulfill the request. Direct the command at the computer.\n"
+                       f"\n"
+                       "Only provide the action, not the whole step or the result. If the last action has failed, do not instruct the exact same action but instead "
+                       "retry variants once or twice. If variants of the action fail as well, try a whole different approach instead.")
 
-        prompt = "".join(previous_steps)
         response = LLMMethods.respond(prompt, list(), function_id="sample_next_step", **parameters)
         return response
 
     @staticmethod
     def _sample_next_step(request: str, message_history: list[dict[str, str]], **parameters: any) -> str | None:
-        instruction = f"Think step-by-step: Given the information above, what is the next single small action to perform to fulfill the request?\n" \
-                      f"Provide a one sentence instruction describing a logical action towards fulfilling the request. Break the task down in small steps.\n" \
-                      f"Do not combine multiple actions. Do not repeat the last action, if it was successful. If an action has failed, retry it once or twice but do " \
-                      f"not suggest the exact same action again. If an action fails repeatedly, try another approach instead.\n" \
-                      f"If the request is already fulfilled, return \"[request fulfilled]\"."
-
         prompt = (f"Request:\n"
                   f"{request}\n"
-                  f"==============\n"
-                  f"{instruction}")
+                  f"===========\n"
+                  f"Think step-by-step: Given the information above, what is the next single small action to perform to fulfill the request?\n"
+                  f"Provide a one sentence instruction describing a logical action towards fulfilling the request. Break the task down in small steps.\n"
+                  f"Do not combine multiple actions. Do not repeat the last action, if it was successful. If an action has failed, retry it once or twice but do "
+                  f"not suggest the exact same action again. If an action fails repeatedly, try another approach instead.")
 
         response = LLMMethods.respond(prompt, message_history, function_id="sample_next_step", **parameters)
-        if "[request fulfilled]" in response.lower():
-            return None
-
         return response
 
     @staticmethod
@@ -240,10 +238,12 @@ class LLMMethods(ABC):
             metric=toolbox.vector_db.similarity_metric
         )
 
+        tool_name = toolbox.vector_db.documents[document_index]
+        logger.info(f"Selected tool: {tool_name} with fitness {fitness:.2f}")
+
         if fitness < .8:
             return None
 
-        tool_name = toolbox.vector_db.documents[document_index]
         return tool_name
 
     @staticmethod
@@ -284,7 +284,8 @@ class LLMMethods(ABC):
         parameters.pop("model", None)
         code = LLMMethods.make_only_code(toolbox, description, message_history, model="gpt-4", **parameters)
         docstring = LLMMethods.make_function_docstring(code, model="gpt-3.5-turbo", **parameters)
-        combined = insert_docstring(code, docstring)
+        indented_docstring = format_docstring(docstring)
+        combined = insert_docstring(code, indented_docstring)
         return combined
 
     @staticmethod
@@ -299,18 +300,16 @@ class LLMMethods(ABC):
                   f"Description:\n"
                   f"{description}\n"
                   f"=================\n"
-                  "Implement a Python function according to the description above. Make it general enough to be used in "
-                  "diverse contexts. Give names to the function and its arguments that are precise so as to later "
-                  "recognise what they stand for. The function must be type hinted.\n"
+                  "Implement a Python function according to the description above. Make it general enough to be used in diverse contexts. Give names to the function "
+                  "and its arguments that are precise so as to later recognise what they stand for. The function must be type hinted.\n"
                   "\n"
-                  "Make use of the available helper functions from the list above by importing them from the tools module "
-                  "(e.g. for the calculate tool: `from tools.calculate import calculate`).\n"
+                  "Make use of the available helper functions from the list above by importing them from the tools module (e.g. for the calculate tool: `from "
+                  "tools.calculate import calculate`).\n"
                   "\n"
-                  "Do not add a docstring. Do not use placeholders or variables that the user is required to fill in (e.g. API keys). Make sure the "
-                  "function works out-of-the-box.\n"
+                  "Do not add a docstring. Do not use placeholders or variables that the user is required to fill in (e.g. API keys). Make sure the function works "
+                  "out-of-the-box. Do not leave place holder to be filled in at a later time. Implement only ready-to-use functions.\n"
                   "\n"
-                  "Respond with a single Python code block containing only the required imports as well as the function. Do "
-                  "not generate text outside of the code block.")
+                  "Respond with a single Python code block containing only the required imports as well as the function. Do not generate text outside of the code block.")
 
         history = list() if message_history is None else list(message_history)
 
@@ -340,5 +339,4 @@ class LLMMethods(ABC):
         history = list()
 
         response = LLMMethods.respond(prompt, history, function_id="make_function_docstring", **parameters)
-        docstring = extract_docstrings(response)
-        return docstring[0]
+        return response

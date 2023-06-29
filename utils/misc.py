@@ -13,7 +13,11 @@ def truncate(string: str, limit: int, indicator: str = "[...]", at_start: bool =
     return string[:limit - len(indicator)] + indicator
 
 
-def extract_docstrings(text: str) -> tuple[str, ...]:
+class DocstringException(Exception):
+    pass
+
+
+def format_docstring(text: str) -> str:
     """
     This function extracts all the triple quoted strings from the given text.
 
@@ -25,14 +29,15 @@ def extract_docstrings(text: str) -> tuple[str, ...]:
     """
 
     # The pattern for triple quoted strings.
-    pattern = r'\'\'\'(.*?)\'\'\'|\"\"\"(.*?)\"\"\"'
+    pattern = r'\"\"\"(.*?)\"\"\"'
 
     # Find all the matches for the pattern and flatten the result.
     matches = re.findall(pattern, text, re.DOTALL)
-    flattened_matches = [quote for match in matches for quote in match if quote]
+    for each_match in matches:
+        if len(each_match) >= 1:
+            return "\n".join("    " + line for line in each_match.split("\n"))
 
-    # Prepend and append the quotes back to the results.
-    return tuple(f'"""\n{match.strip()}\n"""' if text.find(f'"""{match}"""') >= 0 else f"'''\n{match.strip()}\n'''" for match in flattened_matches)
+    raise DocstringException()
 
 
 def extract_code_blocks(text: str, code_type: str | None = None) -> tuple[str, ...]:
