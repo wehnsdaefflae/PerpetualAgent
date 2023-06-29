@@ -178,8 +178,6 @@ class LLMMethods(ABC):
                           message_history: list[dict[str, str]] | None = None,
                           **parameters: any) -> tuple[types.FunctionType, dict[str, any]] | None:
 
-        # todo: vectorize? con: losing api advantage, pro: unlimited number of tools
-
         all_tools = toolbox.get_all_tools()
         all_tool_schemata = [toolbox.get_schema_from_name(each_name) for each_name in all_tools]
 
@@ -210,19 +208,19 @@ class LLMMethods(ABC):
     @staticmethod
     def describe_function(task_description: str, message_history: list[dict[str, any]] | None = None, **parameters: any) -> str:
         # unify with `make_function_docstring`?
-        prompt = ("Describe a Python function that could be used to solve the task below. "
-                  "Take care to describe a general function such that this task is only one of many possible use cases. "
-                  "Describe it as if the function was part of a library that already existed. "
-                  "Do not mention any specifics that might be provided as function arguments. "
-                  "Do not mention the function by name. Describe optional arguments and return values. "
-                  "Do not provide function call or output examples. "
-                  "Do not mention individual use cases or contexts. "
-                  "Instead provide a general and clear description, so it becomes clear what the function achieves and what it can be used for. "
-                  "Do not describe how this is achieved. "
-                  "Keep below 500 characters.\n"
+        prompt = ("Task:\n"
+                  f"{task_description}\n"
                   "===\n"
-                  "Task:\n"
-                  f"{task_description}\n")
+                  "Describe a Python function that could be used to solve the task above. Take care to describe a general function such that this task is only one of many "
+                  "possible use cases. Describe it as if the function was part of a library that already existed.\n"
+                  "Do not mention any specifics that might be provided as function arguments.\n"
+                  "Do not mention the function by name. Describe optional arguments and return values.\n"
+                  "Do not provide function call or output examples.\n"
+                  "Do not mention individual use cases or contexts. Instead provide a general and clear description, so it becomes clear what the function achieves and what it "
+                  "can be used for.\n"
+                  "Describe what the function achieves, not how it is achieved.\n"
+                  "\n"
+                  "Keep it below 500 characters.")
 
         history = message_history or list()
         response = LLMMethods.respond(prompt, history, function_id="describe_function", **parameters)
@@ -242,8 +240,7 @@ class LLMMethods(ABC):
             metric=toolbox.vector_db.similarity_metric
         )
 
-        if fitness < .85:
-            # return function description for tool generation
+        if fitness < .8:
             return None
 
         tool_name = toolbox.vector_db.documents[document_index]
@@ -296,28 +293,24 @@ class LLMMethods(ABC):
         tool_description_lines = [toolbox.get_description_from_name(each_name) for each_name in all_tools]
         tool_descriptions = "\n".join(f"- {each_description}" for each_description in tool_description_lines)
 
-        prompt = (f"Description:\n"
+        prompt = (f"Available helper functions:\n"
+                  f"{tool_descriptions}\n"
+                  f"=================\n"
+                  f"Description:\n"
                   f"{description}\n"
                   f"=================\n"
-                  f"Available helper functions:\n"
-                  f"{tool_descriptions}\n"
-                  f"=================\n\n")
-
-        # todo generate google style docstring separately gpt-3.5-turbo from prompt above, take existing functions as examples
-        instruction = ("Implement a Python function according to the description above. Make it general enough to be used in "
-                       "various different contexts. Give names to the function and its parameters that are precise so as to "
-                       "later recognise what they stand for. The function must be type hinted.\n"
-                       "\n"
-                       "Make use of the available helper functions from the list above by importing them from the tools module "
-                       "(e.g. for the calculate tool: `from tools.calculate import calculate`).\n"
-                       "\n"
-                       "Do not use placeholders or variables that the user is required to fill in (e.g. API keys). Make sure the "
-                       "function works out-of-the-box.\n"
-                       "\n"
-                       "Respond with a single Python code block containing only the required imports as well as the function. Do "
-                       "not generate text outside of the code block.")
-
-        prompt += instruction
+                  "Implement a Python function according to the description above. Make it general enough to be used in "
+                  "diverse contexts. Give names to the function and its arguments that are precise so as to later "
+                  "recognise what they stand for. The function must be type hinted.\n"
+                  "\n"
+                  "Make use of the available helper functions from the list above by importing them from the tools module "
+                  "(e.g. for the calculate tool: `from tools.calculate import calculate`).\n"
+                  "\n"
+                  "Do not add a docstring. Do not use placeholders or variables that the user is required to fill in (e.g. API keys). Make sure the "
+                  "function works out-of-the-box.\n"
+                  "\n"
+                  "Respond with a single Python code block containing only the required imports as well as the function. Do "
+                  "not generate text outside of the code block.")
 
         history = list() if message_history is None else list(message_history)
 
@@ -327,18 +320,22 @@ class LLMMethods(ABC):
 
     @staticmethod
     def make_function_docstring(code: str, **parameters: any) -> str:
-        # unify with the function query generation
-        prompt = (f"Generate a Google style docstring in triple quotation marks for the function below. The docstring must contain the sections \"Example\", \"Args\", "
-                  f"and \"Returns\".  Call the function in the Example section like so: `>>> function_name(<arguments>)` Provide only one example with arguments for a "
-                  f"representative use case. Do not show the result of the function call. " \
-                  f"Don't mention the name of the function in the description (it's only okay in the Example section). " \
-                  f"Don't mention individual use cases or contexts in the description. Instead describe the function the code provides to make clear which use cases "
-                  f"and contexts it applies to. Describe what the function achieves but not how this is achieved. " \
-                  f"Keep below 500 characters.\n"
-                  f"\n"
-                  f"```python\n"
+        prompt = (f"```python\n"
                   f"{code}\n"
-                  f"```")
+                  f"```\n"
+                  f"\n"
+                  f"Generate a Google style docstring in triple quotation marks for the function above. Make it is easy to infer from the description "
+                  f"which use cases and contexts the function can be applied to. The docstring must contain the sections \"Example\", \"Args\", and "
+                  f"\"Returns\".\n"
+                  f"\n"
+                  f"Call the function in the Example section like so: `>>> function_name(<arguments>)` Provide only one example with arguments for a "
+                  f"representative use case. Do not show the result of the function call.\n"
+                  f"\n"
+                  f"Don't mention the name of the function in the description (it's only okay in the Example section).\n"
+                  f"Don't mention particular use cases or contexts in the description.\n"
+                  f"Do not describe how the function works internally but instead describe what the code achieves.\n"
+                  f"\n"
+                  f"Keep it below 500 characters.")
 
         history = list()
 
