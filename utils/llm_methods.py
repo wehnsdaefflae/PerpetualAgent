@@ -120,15 +120,14 @@ class LLMMethods(ABC):
         previous_steps = list()
 
         actions = "\n".join(f"- {toolbox.get_schema_from_name(each_action)['description']}" for each_action in toolbox.get_all_tools())
-        action_section = f"Actions:\n{actions}\n===\n"
+        action_section = f"Available actions:\n{actions}\n===\n"
 
         if len(message_history) < 1:
             previous_steps.append(f"Request: {request}\n===\n")
             previous_steps.append(action_section)
-            previous_steps.append("What would be a reasonable first action considering the available actions and previous steps towards fulfilling the request above? "
-                                  "Provide a one-sentence instruction that applies one action to the request at hand.\n"
-                                  "Do not use multiple actions (e.g. by combining actions with \"and\"). Do not instruct dealing with more than one thing at a time "
-                                  "but deal with each thing in its own individual action.")
+            previous_steps.append("Think step-by-step: What would be a reasonable first action from the available actions towards fulfilling the request above? "
+                                  "Provide a one-sentence instruction for a single simple action towards the request at hand.\n"
+                                  "Do not instruct dealing with more than one thing at a time but deal with one thing only.")
 
         else:
             for i in range(0, len(message_history), 2):
@@ -142,17 +141,15 @@ class LLMMethods(ABC):
 
             previous_steps.append(f"Request: {request}\n===\n")
             previous_steps.append(action_section)
-            previous_steps.append(f"What would be a reasonable action for the next step towards fulfilling the request considering the available actions and the "
-                                  f"previous steps above? Provide a one-sentence instruction that applies one action to the request at hand. Use the results of "
-                                  f"previous actions to inform your choice. Finalize the response if the intermediate results of the previous steps fulfill the "
+            previous_steps.append(f"Think step-by-step: What would be a reasonable next action from the available actions towards fulfilling the request considering the "
+                                  f"previous steps above? Provide a one-sentence instruction for a single simple action towards the request at hand. Use the actions and "
+                                  f"their results from previous steps to inform your choice. Finalize the response if the intermediate results of the previous steps fulfill the "
                                   f"request.\n"
-                                  "Do not instruct multiple actions (e.g. by combining actions with \"and\"). Do not instruct dealing with more than one thing at a time "
-                                  "but deal with each thing in one individual action. Do not repeat the last action, if it was successful. Do not provide a result. If "
-                                  "the last action has failed, do not suggest the exact same action again but instead retry variants once or twice. If variants of the "
-                                  "action fail as well, try a whole other approach instead.\n")
+                                  "Do not instruct dealing with more than one thing at a time but deal with one thing only. Only provide the action, not the whole step or the "
+                                  "result. the last action has failed, do not instruct the exact same action but instead retry variants once or twice. If variants of the "
+                                  "action fail as well, try a whole different approach instead.\n")
 
         prompt = "".join(previous_steps)
-
         response = LLMMethods.respond(prompt, list(), function_id="sample_next_step", **parameters)
         return response
 
@@ -232,14 +229,8 @@ class LLMMethods(ABC):
         return response
 
     @staticmethod
-    def select_tool_call(toolbox: ToolBox,
-                         task_description: str,
-                         message_history: list[dict[str, str]] | None = None,
-                         **parameters: any) -> tuple[types.FunctionType, dict[str, any]] | None:
+    def select_tool_name(toolbox: ToolBox, function_description: str) -> str | None:
 
-        parameters.pop("model", None)
-
-        function_description = LLMMethods.describe_function(task_description, model="gpt-4", **parameters)
         # get embedding for task_description
         embedding, = get_embeddings([function_description])
 
@@ -251,18 +242,12 @@ class LLMMethods(ABC):
             metric=toolbox.vector_db.similarity_metric
         )
 
-        tool_name = toolbox.vector_db.documents[document_index]
-
         if fitness < .85:
             # return function description for tool generation
             return None
 
-        tool_schema = toolbox.get_schema_from_name(tool_name)
-        arguments = LLMMethods.extract_arguments(message_history, tool_schema, task_description, model="gpt-3.5-turbo-0613", **parameters)
-
-        all_tools = toolbox.get_all_tools()
-        tool = all_tools[tool_name]
-        return tool, arguments
+        tool_name = toolbox.vector_db.documents[document_index]
+        return tool_name
 
     @staticmethod
     def _make_tool_code(toolbox: ToolBox, description: str, message_history: list[dict[str, str]] | None = None, **parameters: any) -> str:
@@ -299,18 +284,19 @@ class LLMMethods(ABC):
 
     @staticmethod
     def make_tool_code(toolbox: ToolBox, description: str, message_history: list[dict[str, str]] | None = None, **parameters: any) -> str:
-        code = LLMMethods.make_only_tool_code(toolbox, description, message_history, model="gpt-4", **parameters)
+        parameters.pop("model", None)
+        code = LLMMethods.make_only_code(toolbox, description, message_history, model="gpt-4", **parameters)
         docstring = LLMMethods.make_function_docstring(code, model="gpt-3.5-turbo", **parameters)
         combined = insert_docstring(code, docstring)
         return combined
 
     @staticmethod
-    def make_only_tool_code(toolbox: ToolBox, description: str, message_history: list[dict[str, str]] | None = None, **parameters: any) -> str:
+    def make_only_code(toolbox: ToolBox, description: str, message_history: list[dict[str, str]] | None = None, **parameters: any) -> str:
         all_tools = toolbox.get_all_tools()
         tool_description_lines = [toolbox.get_description_from_name(each_name) for each_name in all_tools]
         tool_descriptions = "\n".join(f"- {each_description}" for each_description in tool_description_lines)
 
-        prompt = (f"Task:\n"
+        prompt = (f"Description:\n"
                   f"{description}\n"
                   f"=================\n"
                   f"Available helper functions:\n"
@@ -318,17 +304,18 @@ class LLMMethods(ABC):
                   f"=================\n\n")
 
         # todo generate google style docstring separately gpt-3.5-turbo from prompt above, take existing functions as examples
-        instruction = "Implement a Python function that achieves the task described above. Provide a parametrized function that is general enough to be used in other " \
-                      "contexts beyond the particular task at hand. " \
-                      "Give names to the functions and its parameters that are precise so as to later recognise what they stand for. Don't use one of the helper function names " \
-                      "as a name for the function or for its parameters. " \
-                      "The function must be type hinted. " \
-                      "Call the available helper functions from the list above, whenever possible. Helper functions are imported from the tools module (e.g. for the calculate " \
-                      "tool: `from tools.calculate import calculate`). " \
-                      "Do not use placeholders or variables that the user needs to fill in (e.g. API keys). Make sure, the function works out-of-the-box, without any user " \
-                      "information, interaction, or modification." \
-                      "Respond with a single Python code block containing only the required imports as well as the function. Do not generate text outside of the " \
-                      "code block."
+        instruction = ("Implement a Python function according to the description above. Make it general enough to be used in "
+                       "various different contexts. Give names to the function and its parameters that are precise so as to "
+                       "later recognise what they stand for. The function must be type hinted.\n"
+                       "\n"
+                       "Make use of the available helper functions from the list above by importing them from the tools module "
+                       "(e.g. for the calculate tool: `from tools.calculate import calculate`).\n"
+                       "\n"
+                       "Do not use placeholders or variables that the user is required to fill in (e.g. API keys). Make sure the "
+                       "function works out-of-the-box.\n"
+                       "\n"
+                       "Respond with a single Python code block containing only the required imports as well as the function. Do "
+                       "not generate text outside of the code block.")
 
         prompt += instruction
 

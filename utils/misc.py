@@ -32,7 +32,8 @@ def extract_docstrings(text: str) -> tuple[str, ...]:
     flattened_matches = [quote for match in matches for quote in match if quote]
 
     # Prepend and append the quotes back to the results.
-    return tuple(f'"""{match}"""' if text.find(f'"""{match}"""') >= 0 else f"'''{match}'''" for match in flattened_matches)
+    return tuple(f'"""\n{match.strip()}\n"""' if text.find(f'"""{match}"""') >= 0 else f"'''\n{match.strip()}\n'''" for match in flattened_matches)
+
 
 def extract_code_blocks(text: str, code_type: str | None = None) -> tuple[str, ...]:
     """

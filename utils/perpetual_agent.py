@@ -1,7 +1,6 @@
 # coding=utf-8
 import json
 import logging
-import types
 import colorama
 
 from utils.llm_methods import LLMMethods, ExtractionException
@@ -46,26 +45,37 @@ class PerpetualAgent:
         return improved_request
 
     def _get_result(self, step_description: str, previous_steps: list[dict[str, str]]) -> tuple[str, bool]:
+        function_description = LLMMethods.describe_function(step_description, model="gpt-4")
+        new_tool_code = None
+        tool_name = LLMMethods.select_tool_name(self.toolbox, function_description)
+
+        # take tool_arguments or function_description
+        if tool_name is None:
+            try:
+                new_tool_code = LLMMethods.make_tool_code(self.toolbox, function_description, message_history=previous_steps, model="gpt-4")
+                tool_name = self.toolbox.get_name_from_code(new_tool_code)
+                tool = self.toolbox.get_temp_tool_from_code(new_tool_code)
+                schema = self.toolbox.get_schema_from_code(new_tool_code)
+
+            except Exception as e:
+                creation_error = f"Creation of action failed: {e}"
+                self.main_logger.error(creation_error)
+                return creation_error, False
+
+        else:
+            tool = self.toolbox.get_tool_from_name(tool_name)
+            schema = self.toolbox.get_schema_from_name(tool_name)
+
         try:
-            new_tool_code = None
+            arguments = LLMMethods.extract_arguments(previous_steps, schema, step_description, model="gpt-3.5-turbo-0613")
 
-            tool_arguments = LLMMethods.select_tool_call(self.toolbox, step_description, message_history=previous_steps, model="gpt-3.5-turbo")
-            # take tool_arguments or function_description
-            if tool_arguments is None:
-                tool_arguments, new_tool_code = self._make_tool(step_description, previous_steps)
-
-            tool, arguments = tool_arguments
-            schema = self.toolbox.get_schema_from_tool(tool)
-
-        except Exception as e:
-            creation_error = f"Creation of action failed: {e}"
-            self.main_logger.error(creation_error)
-            raise e
-            return creation_error, False
+        except ExtractionException as e:
+            extraction_error = f"Extraction of arguments failed: {e}"
+            self.main_logger.error(extraction_error)
+            return extraction_error, False
 
         new_str = "" if new_tool_code is None else " (new)"
         truncated_arguments = ", ".join(f"str({k})={truncate(str(v), 50)!r}" for k, v in arguments.items())
-        tool_name = schema['name']
         tool_call = f"{tool_name}({truncated_arguments})"
         user_input = input(f"{colorama.Fore.YELLOW}  Action{new_str}: {tool_call} [y/N]? {colorama.Style.RESET_ALL}")
         if user_input != "y":
@@ -94,20 +104,6 @@ class PerpetualAgent:
         result_naturalized = LLMMethods.naturalize(step_description, schema, arguments_json, result_json, model="gpt-3.5-turbo-0613")
         return result_naturalized, False
 
-    def _make_tool(self, step_description: str, previous_steps: list[dict[str, str]]) -> tuple[tuple[types.FunctionType, dict[str, any]] | None, str | None]:
-        new_tool_code = LLMMethods.make_tool_code(self.toolbox, step_description, message_history=previous_steps, model="gpt-4")
-        schema = self.toolbox.get_schema_from_code(new_tool_code)
-
-        try:
-            arguments = LLMMethods.extract_arguments(previous_steps, schema, step_description, model="gpt-3.5-turbo-0613")
-
-        except ExtractionException as e:
-            self.main_logger.error(f"Information extraction failed: {e}")
-            return None, None
-
-        tmp_tool = self.toolbox.get_temp_tool_from_code(new_tool_code)
-        return (tmp_tool, arguments), new_tool_code
-
     def respond(self, main_request: str, step_memory: int = 100) -> str:
         improved_request = self.improve_request(main_request, model="gpt-3.5-turbo")
 
@@ -125,7 +121,7 @@ class PerpetualAgent:
                 break
             """
             # step_description = LLMMethods.sample_next_step(improved_request, previous_steps, model="gpt-4", temperature=.2)
-            step_description = LLMMethods.sample_next_step(improved_request, previous_steps, self.toolbox, model="gpt-3.5-turbo-16k-0613", temperature=.0)
+            step_description = LLMMethods.sample_next_step(improved_request, previous_steps, self.toolbox, model="gpt-3.5-turbo", temperature=.0)
 
             output_step = f"Step {i}:\n  {step_description}"
             print(f"{colorama.Fore.GREEN}{output_step}{colorama.Style.RESET_ALL}")
