@@ -30,7 +30,7 @@ def summarize_text(text: str, len_summary: int, focus: str | None = None) -> str
     instruction = f"Summarize the above text with {len_summary} characters.{focus_text}\n"
 
     if len_text > 5_000:
-        text = LLMMethods.summarize(instruction, text)
+        text = LLMMethods.vector_summarize(instruction, text)
         return text
 
     prompt = (f"{text}\n"

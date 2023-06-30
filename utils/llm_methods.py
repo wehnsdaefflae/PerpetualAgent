@@ -12,7 +12,7 @@ from hyperdb import hyper_SVM_ranking_algorithm_sort
 from utils import openai_function_schemata
 from utils.basic_llm_calls import openai_chat, get_embeddings
 from utils.logging_handler import logging_handlers
-from utils.misc import extract_code_blocks, extract_docstring
+from utils.misc import extract_code_blocks, extract_docstring, format_steps
 from utils.toolbox import ToolBox
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,16 @@ class LLMMethods(ABC):
         return improved_request
 
     @staticmethod
-    def summarize(request: str, text: str, segment_size: int = 500, overlap: int = 100, nearest_neighbors: int = 5, **parameters: any) -> str:
+    def summarize_steps(last_step: str, last_summary: str, length: int = 5_000, **parameters: any) -> str:
+        prompt = (f"{last_summary}\n"
+                  f"{last_step}\n"
+                  f"==============\n"
+                  f"Summarize actions and results from above in {length} characters or less.\n")
+        summary = LLMMethods.respond(prompt, list(), function_id="summarize", **parameters)
+        return summary
+
+    @staticmethod
+    def vector_summarize(request: str, text: str, segment_size: int = 500, overlap: int = 100, nearest_neighbors: int = 5, **parameters: any) -> str:
         # segment text
         len_text = len(text)
         segments = [text[max(0, i - overlap):min(i + segment_size + overlap, len_text)].strip() for i in range(0, len_text, segment_size)]
@@ -197,17 +206,7 @@ class LLMMethods(ABC):
                        f"natural language for a single simple action towards implementing the request at hand.")
 
         else:
-            previous_steps = list()
-            for i in range(0, len(message_history[-10:]), 2):
-                each_request, each_response = tuple(each_message["content"] for each_message in message_history[i:i + 2])
-                each_step = (f"Step {i // 2 + 1}:\n"
-                             f"  Action: {each_request.strip()}\n"
-                             f"  Result: {each_response.strip()}\n"
-                             f"===\n")
-
-                previous_steps.append(each_step)
-
-            prompt += "\n".join(previous_steps)
+            prompt += format_steps(message_history)
             prompt += (f"Think step-by-step: What would be a computer's next action in order to fulfill the request and given the previous steps above? Provide a "
                        f"one-sentence command in natural language for a single simple action towards implementing the request at hand. Finalize the response if the "
                        f"previous steps indicate that the request is already fulfilled.\n"
@@ -219,16 +218,27 @@ class LLMMethods(ABC):
         return response
 
     @staticmethod
-    def _sample_next_step(request: str, message_history: list[dict[str, str]], **parameters: any) -> str | None:
-        prompt = (f"Request:\n"
-                  f"{request}\n"
-                  f"===========\n"
-                  f"Think step-by-step: Given the information above, what is the next single small action to perform to fulfill the request?\n"
-                  f"Provide a one sentence instruction describing a logical action towards fulfilling the request. Break the task down in small steps.\n"
-                  f"Do not combine multiple actions. Do not repeat the last action, if it was successful. If an action has failed, retry it once or twice but do "
-                  f"not suggest the exact same action again. If an action fails repeatedly, try another approach instead.")
+    def sample_next_step_summary(request: str, history_summary: str, **parameters: any) -> str:
+        prompt = (f"Request: {request}\n"
+                  f"===\n"
+                  f"\n")
 
-        response = LLMMethods.respond(prompt, message_history, function_id="sample_next_step", **parameters)
+        if 0 >= len(history_summary):
+            prompt += (f"Think step-by-step: What would be a computer's first action in order to fulfill the request above? Provide a one-sentence command in "
+                       f"natural language for a single simple action towards implementing the request at hand.")
+
+        else:
+            prompt += (f"Previous steps:\n"
+                       f"{history_summary}\n"
+                       f"===\n")
+            prompt += (f"Think step-by-step: What would be a computer's next action in order to fulfill the request and given the previous steps above? Provide a "
+                       f"one-sentence command in natural language for a single simple action towards implementing the request at hand. Finalize the response if the "
+                       f"previous steps indicate that the request is already fulfilled.\n"
+                       f"\n"
+                       "Only describe the action, not the whole step or the result. If the last action has failed, do not instruct the exact same action again but "
+                       "instead retry variants once or twice. If variants of the action fail as well, try a whole different approach instead.")
+
+        response = LLMMethods.respond(prompt, list(), function_id="sample_next_step_summary", **parameters)
         return response
 
     @staticmethod
