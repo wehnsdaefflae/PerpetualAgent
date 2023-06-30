@@ -344,7 +344,7 @@ class LLMMethods(ABC):
 
         history = list() if message_history is None else list(message_history)
 
-        response = LLMMethods.respond(prompt, history, function_id="make_only_tool_code", **parameters)
+        response = LLMMethods.respond(prompt, history, function_id="make_code", **parameters)
         code = extract_code_blocks(response)
         return code[0]
 
