@@ -11,19 +11,19 @@ def finalize(request: str, intermediate_results: list[str]) -> str:
 
     Args:
         request (str): The original request made by the user.
-        intermediate_results (list[str]): The list of intermediate responses to the request.
+        intermediate_results (list[str]): The list of intermediate results that are relevant to fulfilling the request.
 
     Returns:
         str: The final synthesized response, derived from the intermediate results in relation to the original request.
     """
     intermediate_str = "\n\n".join(intermediate_results)
-    prompt = (f"Intermediate results:\n"
+    prompt = (f"Use the intermediate results to compose a final response to the initial request.\n"
+              f"\n"
+              f"Intermediate results:\n"
               f"{intermediate_str}\n"
               f"===\n"
               f"Initial request:\n"
-              f"{request}\n"
-              f"===\n"
-              f"Use information from the intermediate results to compose a final response to the initial request.")
+              f"{request}")
 
     messages = [
         {"role": "user", "content": prompt}

@@ -40,9 +40,11 @@ class ToolBox:
                 return db
 
             db = hyperdb.HyperDB()
+            self.logger.warning(f"Database already initialized with {len(tool_names_from_db)} tools, but {len(tool_names)} tools found in folder. "
+                                f"Reinitializing database.")
 
         self.logger.info(f"Initializing database with {len(tool_names)} tools")
-        descriptions = [self.get_docstring_description_from_name(each_name) for each_name in tool_names]
+        descriptions = [self.get_docstring_from_name(each_name) for each_name in tool_names]
         embeddings = get_embeddings(descriptions)
         db.add_documents(tool_names, vectors=embeddings)
         db.save(database_path)
@@ -119,8 +121,11 @@ class ToolBox:
         args_section = parsed_doc.params
 
         tool = self.get_temp_tool_from_code(code)
-        arguments = (each_argument for each_argument in tool.__annotations__.items() if each_argument[0] != 'return')
+        arguments = tuple(each_argument for each_argument in tool.__annotations__.items() if each_argument[0] != 'return')
         properties = dict()
+
+        if len(args_section) != len(arguments):
+            print()
 
         for (arg_name, arg_type), each_arg in zip(arguments, args_section, strict=True):
             arg_description = each_arg.description
@@ -160,6 +165,10 @@ class ToolBox:
         code = self.get_code_from_name(name)
         return self.get_docstring_description_from_code(code)
 
+    def get_docstring_from_name(self, name: str) -> str:
+        code = self.get_code_from_name(name)
+        return self.get_docstring_from_code(code)
+
     def get_docstring_description_from_code(self, code: str) -> str:
         tool_doc = self.get_docstring_from_code(code)
         parsed_doc = parse(tool_doc)
@@ -167,7 +176,7 @@ class ToolBox:
         tool_long_description = parsed_doc.long_description
         if tool_long_description is None:
             return tool_short_description
-        return tool_short_description + " " + tool_long_description
+        return " ".join(tool_short_description.split("\n")) + " " + " ".join(tool_long_description.split("\n"))
 
     def get_required_from_code(self, code: str) -> list[str]:
         module = ast.parse(code)

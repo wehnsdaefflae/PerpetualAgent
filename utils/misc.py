@@ -2,6 +2,17 @@
 import ast
 import re
 
+import logging
+
+from utils.logging_handler import logging_handlers
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+handlers = logging_handlers()
+for each_handler in handlers:
+    logger.addHandler(each_handler)
+
 
 def truncate(string: str, limit: int, indicator: str = "[...]", at_start: bool = False) -> str:
     if limit >= len(string):
@@ -17,7 +28,7 @@ class DocstringException(Exception):
     pass
 
 
-def format_docstring(text: str) -> str:
+def extract_docstring(text: str) -> str:
     """
     This function extracts all the triple quoted strings from the given text.
 
@@ -35,7 +46,7 @@ def format_docstring(text: str) -> str:
     matches = re.findall(pattern, text, re.DOTALL)
     for each_match in matches:
         if len(each_match) >= 1:
-            return "\n".join("    " + line for line in each_match.split("\n"))
+            return each_match
 
     raise DocstringException()
 

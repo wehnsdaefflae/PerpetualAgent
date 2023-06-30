@@ -4,6 +4,7 @@ import types
 from abc import ABC
 import logging
 
+import hyperdb
 import numpy
 import openai
 from hyperdb import hyper_SVM_ranking_algorithm_sort
@@ -11,7 +12,7 @@ from hyperdb import hyper_SVM_ranking_algorithm_sort
 from utils import openai_function_schemata
 from utils.basic_llm_calls import openai_chat, get_embeddings
 from utils.logging_handler import logging_handlers
-from utils.misc import extract_code_blocks, format_docstring, insert_docstring, DocstringException
+from utils.misc import extract_code_blocks, extract_docstring
 from utils.toolbox import ToolBox
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,76 @@ class ExtractionException(Exception):
 
 class LLMMethods(ABC):
     openai.api_key_path = "resources/openai_api_key.txt"
+
+    @staticmethod
+    def improve_request(main_request: str, *parameters: any, **kwargs: any) -> str:
+        prompt = (f"Request:\n"
+                  f"{main_request}\n"
+                  f"==============\n"
+                  f"Provide an improved version of this request by incorporating the following points:\n"
+                  f"1. Identify the Purpose of the Request: What is the objective of the request? Understand the aim behind the request. This will give the instruction "
+                  f"a clear direction.\n"
+                  f"2. Specify the Action: What needs to be done? The action should be clearly defined. Instead of saying \"improve the report\", say \"add more data "
+                  f"analysis and revise the formatting of the report.\"\n"
+                  f"3. Details Matter: Give as much detail as you can. Be specific about what exactly needs to be done. Use precise, concrete language.\n"
+                  f"4. Define the Scope: What is the extent of the request? For instance, does the request pertain to one particular chapter of a report or the entire "
+                  f"report?\n"
+                  f"5. Indicate the Format: If there is a specific way to fulfill the request, provide this information. For example, if you are requesting a report, "
+                  f"specify whether you want it in Word, PDF, or another format.\n"
+                  f"6. Clarify the Success Criteria: How will you judge whether the request has been fulfilled? What does the end result look like? It's important to "
+                  f"convey your expectations.\n"
+                  f"7. Address Potential Challenges: Think about the possible difficulties in fulfilling the request, and provide solutions or suggestions on how to "
+                  f"deal with them.\n"
+                  f"8. Provide Resources or Assistance if Needed: If there are any tools, references, or people that might help fulfill the request, mention them.\n"
+                  f"\n"
+                  f"Respond only with the improved version of the request. Make it concise and to the point. Write between two and five sentences, do not use bullet "
+                  f"points, do not address the points above explicitly, do not include any of the above points in your response, and do not encourage checking back. "
+                  f"They're on their own on this one.\n")
+        improved_request = LLMMethods.respond(prompt, list(), *parameters, **kwargs)
+        return improved_request
+
+    @staticmethod
+    def summarize(request: str, text: str, segment_size: int = 500, overlap: int = 100, nearest_neighbors: int = 5, **parameters: any) -> str:
+        # segment text
+        len_text = len(text)
+        segments = [text[max(0, i - overlap):min(i + segment_size + overlap, len_text)].strip() for i in range(0, len_text, segment_size)]
+        print(f"Summarizing {len(segments)}...")
+
+        for i in range(len(segments)):
+            if i >= 1:
+                segments[i] = "[...]" + segments[i]
+
+            if i < len(segments) - 1:
+                segments[i] += "[...]"
+
+        db = hyperdb.HyperDB()
+
+        # embed
+        embeddings = get_embeddings([request] + segments)
+
+        request_vector = embeddings[0]
+        segment_vectors = embeddings[1:]
+
+        # put embeddings in database
+        db.add_documents(segments, vectors=segment_vectors)
+
+        # get nearest neighbors
+        nearest_neighbor_indices, _ = hyper_SVM_ranking_algorithm_sort(
+            db.vectors,
+            numpy.array(request_vector),
+            top_k=nearest_neighbors
+        )
+
+        nearest_neighbors = [db.documents[i] for i in nearest_neighbor_indices]
+        concatenated = "\n\n".join(nearest_neighbors)
+
+        prompt = (f"{concatenated}\n"
+                  f"===\n"
+                  f"Given the text above, respond to the following request:\n"
+                  f"{request}")
+
+        response = LLMMethods.respond(prompt, list(), function_id="summarize", **parameters)
+        return response
 
     @staticmethod
     def extract_arguments(previous_messages: list[dict[str, str]], tool_schema: dict[str, any], prompt: str, **parameters: any) -> dict[str, any]:
@@ -122,11 +193,8 @@ class LLMMethods(ABC):
                   f"\n")
 
         if len(message_history) < 1:
-            # prompt += (f"Think step-by-step: What would be a reasonable first action towards fulfilling the request above? "
-            #            f"Provide a one-sentence instruction for a single simple action towards the request at hand. Deal only with one thing at a time.")
-            prompt += (f"Assume there is a computer program that fulfills the request above when executed. What would be its first command to the computer? Provide a "
-                       f"one-sentence instruction in natural language for a single simple action leading towards the request at hand. Direct the command at the "
-                       f"computer.")
+            prompt += (f"Think step-by-step: What would be a computer's first action in order to fulfill the request above? Provide a one-sentence command in "
+                       f"natural language for a single simple action towards implementing the request at hand.")
 
         else:
             previous_steps = list()
@@ -140,19 +208,12 @@ class LLMMethods(ABC):
                 previous_steps.append(each_step)
 
             prompt += "\n".join(previous_steps)
-            # prompt += (f"Think step-by-step: What would be a reasonable next action towards fulfilling the request considering the previous steps above? "
-            #            f"Provide a one-sentence instruction for a single simple action towards the request at hand. Use the actions and their results from "
-            #            f"previous steps to inform your choice. Finalize the response if the intermediate results of the previous steps fulfill the request.\n"
-            #            f"\n"
-            #            "Deal with one thing at a time. Only provide the action, not the whole step or the result. If the last action has failed, do not "
-            #            "instruct the exact same action but instead retry variants once or twice. If variants of the action fail as well, try a whole "
-            #            "different approach instead.")
-            prompt += (f"Assume there is a computer program that fulfills the request above when executed. What would be the next command to the computer given the "
-                       f"previous steps above? Provide a one-sentence instruction in natural language for a single simple action towards the request at hand. Finalize "
-                       f"the response if the intermediate results of the previous steps fulfill the request. Direct the command at the computer.\n"
+            prompt += (f"Think step-by-step: What would be a computer's next action in order to fulfill the request and given the previous steps above? Provide a "
+                       f"one-sentence command in natural language for a single simple action towards implementing the request at hand. Finalize the response if the "
+                       f"previous steps indicate that the request is already fulfilled.\n"
                        f"\n"
-                       "Only provide the action, not the whole step or the result. If the last action has failed, do not instruct the exact same action but instead "
-                       "retry variants once or twice. If variants of the action fail as well, try a whole different approach instead.")
+                       "Only describe the action, not the whole step or the result. If the last action has failed, do not instruct the exact same action again but "
+                       "instead retry variants once or twice. If variants of the action fail as well, try a whole different approach instead.")
 
         response = LLMMethods.respond(prompt, list(), function_id="sample_next_step", **parameters)
         return response
@@ -202,27 +263,6 @@ class LLMMethods(ABC):
         arguments = json.loads(arguments_str)
         tool = all_tools[function_name]
         return tool, arguments
-
-    @staticmethod
-    def describe_function(task_description: str, message_history: list[dict[str, any]] | None = None, **parameters: any) -> str:
-        # unify with `make_function_docstring`?
-        prompt = ("Task:\n"
-                  f"{task_description}\n"
-                  "===\n"
-                  "Describe a Python function that could be used to solve the task above. Take care to describe a general function such that this task is only one of many "
-                  "possible use cases. Describe it as if the function was part of a library that already existed.\n"
-                  "Do not mention any specifics that might be provided as function arguments.\n"
-                  "Do not mention the function by name. Describe optional arguments and return values.\n"
-                  "Do not provide function call or output examples.\n"
-                  "Do not mention individual use cases or contexts. Instead provide a general and clear description, so it becomes clear what the function achieves and what it "
-                  "can be used for.\n"
-                  "Describe what the function achieves, not how it is achieved.\n"
-                  "\n"
-                  "Keep it below 500 characters.")
-
-        history = message_history or list()
-        response = LLMMethods.respond(prompt, history, function_id="describe_function", **parameters)
-        return response
 
     @staticmethod
     def select_tool_name(toolbox: ToolBox, function_description: str) -> str | None:
@@ -280,16 +320,7 @@ class LLMMethods(ABC):
         return code[0]
 
     @staticmethod
-    def make_tool_code(toolbox: ToolBox, description: str, message_history: list[dict[str, str]] | None = None, **parameters: any) -> str:
-        parameters.pop("model", None)
-        code = LLMMethods.make_only_code(toolbox, description, message_history, model="gpt-4", **parameters)
-        docstring = LLMMethods.make_function_docstring(code, model="gpt-3.5-turbo", **parameters)
-        indented_docstring = format_docstring(docstring)
-        combined = insert_docstring(code, indented_docstring)
-        return combined
-
-    @staticmethod
-    def make_only_code(toolbox: ToolBox, description: str, message_history: list[dict[str, str]] | None = None, **parameters: any) -> str:
+    def make_code(toolbox: ToolBox, docstring: str, message_history: list[dict[str, str]] | None = None, **parameters: any) -> str:
         all_tools = toolbox.get_all_tools()
         tool_description_lines = [toolbox.get_description_from_name(each_name) for each_name in all_tools]
         tool_descriptions = "\n".join(f"- {each_description}" for each_description in tool_description_lines)
@@ -297,19 +328,19 @@ class LLMMethods(ABC):
         prompt = (f"Available helper functions:\n"
                   f"{tool_descriptions}\n"
                   f"=================\n"
-                  f"Description:\n"
-                  f"{description}\n"
+                  f"Docstring:\n"
+                  f"{docstring}\n"
                   f"=================\n"
-                  "Implement a Python function according to the description above. Make it general enough to be used in diverse contexts. Give names to the function "
-                  "and its arguments that are precise so as to later recognise what they stand for. The function must be type hinted.\n"
+                  "Generate a Python function that fully implements the docstring above. Make it general enough to be used in diverse use cases and contexts. The "
+                  "function must be type hinted, working, and every aspect must be implement according to the docstring.\n"
                   "\n"
                   "Make use of the available helper functions from the list above by importing them from the tools module (e.g. for the calculate tool: `from "
                   "tools.calculate import calculate`).\n"
                   "\n"
-                  "Do not add a docstring. Do not use placeholders or variables that the user is required to fill in (e.g. API keys). Make sure the function works "
-                  "out-of-the-box. Do not leave place holder to be filled in at a later time. Implement only ready-to-use functions.\n"
+                  "Do not use placeholders that must be filled in later (e.g. API keys).\n"
                   "\n"
-                  "Respond with a single Python code block containing only the required imports as well as the function. Do not generate text outside of the code block.")
+                  "Respond with a single Python code block containing only the required imports as well as the function including the above docstring. Format the "
+                  "docstring according to the Google style guide.\n")
 
         history = list() if message_history is None else list(message_history)
 
@@ -318,25 +349,28 @@ class LLMMethods(ABC):
         return code[0]
 
     @staticmethod
-    def make_function_docstring(code: str, **parameters: any) -> str:
-        prompt = (f"```python\n"
-                  f"{code}\n"
-                  f"```\n"
-                  f"\n"
-                  f"Generate a Google style docstring in triple quotation marks for the function above. Make it is easy to infer from the description "
-                  f"which use cases and contexts the function can be applied to. The docstring must contain the sections \"Example\", \"Args\", and "
-                  f"\"Returns\".\n"
-                  f"\n"
-                  f"Call the function in the Example section like so: `>>> function_name(<arguments>)` Provide only one example with arguments for a "
-                  f"representative use case. Do not show the result of the function call.\n"
-                  f"\n"
-                  f"Don't mention the name of the function in the description (it's only okay in the Example section).\n"
-                  f"Don't mention particular use cases or contexts in the description.\n"
-                  f"Do not describe how the function works internally but instead describe what the code achieves.\n"
+    def make_function_docstring(task: str, **parameters: any) -> str:
+        prompt = (f"Task:\n"
+                  f"{task}\n"
+                  f"===\n"
+                  "\n"
+                  "Generate a Google style docstring in triple quotation marks for a Python function that could solve the task above. Describe the function as if it "
+                  "already existed. Make it is easy to infer from the description which use cases and contexts the function can be applied to. Use function arguments to "
+                  "make sure that the function can be applied to other tasks as well.\n"
+                  "\n"
+                  "The docstring must contain a function description, as well as the sections \"Example\", \"Args\", and \"Returns\".\n"
+                  "\n"
+                  "Call the function in the Example section like so: `>>> function_name(<arguments>)` Provide only one example with arguments for a representative use "
+                  "case. Do not show the return value of the function call.\n"
+                  "\n"
+                  "Do not mention particular use cases or contexts in the description.\n"
+                  "Mention the name of the function only in the Example section but not in the description.\n"
+                  "Describe what the function does, not how it is done.\n"
                   f"\n"
                   f"Keep it below 500 characters.")
 
         history = list()
 
         response = LLMMethods.respond(prompt, history, function_id="make_function_docstring", **parameters)
-        return response
+        docstring = extract_docstring(response)
+        return docstring

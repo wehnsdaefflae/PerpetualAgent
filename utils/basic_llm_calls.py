@@ -1,6 +1,7 @@
 # coding=utf-8
 import logging
 import time
+from traceback import format_exc
 
 import openai
 from openai.openai_object import OpenAIObject
@@ -25,9 +26,8 @@ def openai_chat(function_id: str, *args: any, **kwargs: any) -> OpenAIObject:
                 return response
 
             except Exception as e:
-                logger.error(str(e))
-                msg = f"Error. Retrying chat completion {i + 1} of 5"
-                logger.error(msg)
+                msg = f"Error {e}. Retrying chat completion {i + 1} of 5"
+                logger.error(str(format_exc()))
                 print(msg)
                 time.sleep(1)
                 continue
@@ -52,9 +52,8 @@ def get_embeddings(segments: list[str]) -> list[list[float]]:
                 return [record["embedding"] for record in result["data"]]
 
             except Exception as e:
-                logger.error(str(e))
-                msg = f"Error. Retrying embedding {i + 1} of 5"
-                logger.error(msg)
+                msg = f"Error {e}. Retrying embedding {i + 1} of 5"
+                logger.error(format_exc())
                 print(msg)
                 time.sleep(1)
                 continue
