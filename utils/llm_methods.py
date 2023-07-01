@@ -58,11 +58,10 @@ class LLMMethods(ABC):
         return improved_request
 
     @staticmethod
-    def summarize_steps(last_step: str, last_summary: str, length: int = 5_000, **parameters: any) -> str:
-        prompt = (f"{last_summary}\n"
-                  f"{last_step}\n"
+    def summarize(text: str, instruction: str = "Summarize the text above.", **parameters: any) -> str:
+        prompt = (f"{text}\n"
                   f"==============\n"
-                  f"Summarize actions and results from above in {length} characters or less.\n")
+                  f"{instruction}\n")
         summary = LLMMethods.respond(prompt, list(), function_id="summarize", **parameters)
         return summary
 
@@ -225,18 +224,19 @@ class LLMMethods(ABC):
 
         if 0 >= len(history_summary):
             prompt += (f"Think step-by-step: What would be a computer's first action in order to fulfill the request above? Provide a one-sentence command in "
-                       f"natural language for a single simple action towards implementing the request at hand.")
+                       f"natural language for a single simple action towards fulfilling the request at hand.")
 
         else:
-            prompt += (f"Previous steps:\n"
+            prompt += (f"Progress:\n"
                        f"{history_summary}\n"
                        f"===\n")
-            prompt += (f"Think step-by-step: What would be a computer's next action in order to fulfill the request and given the previous steps above? Provide a "
-                       f"one-sentence command in natural language for a single simple action towards implementing the request at hand. Finalize the response if the "
-                       f"previous steps indicate that the request is already fulfilled.\n"
+            prompt += (f"Think step-by-step: What would be a computer's next action in order to fulfill the request and given the progress outlined above? Provide a "
+                       f"one-sentence command in natural language for a single simple action towards fulfilling the request at hand.\n"
                        f"\n"
-                       "Only describe the action, not the whole step or the result. If the last action has failed, do not instruct the exact same action again but "
-                       "instead retry variants once or twice. If variants of the action fail as well, try a whole different approach instead.")
+                       "If the last action has failed, do not instruct the exact same action again but instead retry variants once or twice. If variants of the action "
+                       "fail as well, try a whole different approach instead.\n"
+                       "\n"
+                       f"Finalize the response if the outlines progress indicates that the request is already fulfilled.")
 
         response = LLMMethods.respond(prompt, list(), function_id="sample_next_step_summary", **parameters)
         return response

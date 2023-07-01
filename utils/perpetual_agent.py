@@ -4,11 +4,10 @@ import logging
 from traceback import format_exc
 
 import colorama
-from sqlalchemy.sql.functions import sum
 
 from utils.llm_methods import LLMMethods, ExtractionException
 from utils.logging_handler import logging_handlers
-from utils.misc import truncate, insert_docstring, format_steps
+from utils.misc import truncate, format_steps
 from utils.toolbox import ToolBox
 
 
@@ -149,9 +148,10 @@ class PerpetualAgent:
 
         print(f"{colorama.Fore.CYAN}{improved_request}{colorama.Style.RESET_ALL}\n")
 
+        result_length_limit = 2_000
+
         i = 1
         previous_steps = list()
-        intermediate_results = list()
         summary = ""
         while True:
             # step_description = LLMMethods.sample_next_step(improved_request, previous_steps, model="gpt-4", temperature=.2)
@@ -164,29 +164,27 @@ class PerpetualAgent:
             print(output_step)
 
             result, is_finalized = self._get_result(step_description, previous_steps)
-            if len(result) > 2_000:
+            if len(result) > result_length_limit:
                 result = LLMMethods.vector_summarize(step_description, result, model="gpt-3.5-turbo-0613")
                 output_result = f"{colorama.Fore.BLUE}  Summarized result: {result}{colorama.Style.RESET_ALL}"
             else:
                 output_result = f"{colorama.Fore.BLUE}  Result: {result}{colorama.Style.RESET_ALL}"
 
             print(output_result)
-
             self.main_logger.info(result)
             print("====================================\n")
+
             if is_finalized:
                 self.main_logger.info("Request fulfilled.")
                 print("Request fulfilled.")
                 return result
 
-            intermediate_results.append(result)
             this_step = [
                 {"role": "user", "content": step_description},
-                # {"role": "assistant", "content": truncate(result, 1_000, at_start=True)}
                 {"role": "assistant", "content": result}
             ]
             formatted_step = format_steps(this_step)
-            summary = LLMMethods.summarize_steps(formatted_step, summary, model="gpt-3.5-turbo")
+            summary = LLMMethods.summarize(summary + "\n" + formatted_step, instruction="Summarize the actions and results from the text above.", model="gpt-3.5-turbo")
             previous_steps.extend(this_step)
 
             # "model": "gpt-3.5-turbo-16k-0613"
