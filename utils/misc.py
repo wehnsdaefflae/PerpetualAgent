@@ -51,7 +51,7 @@ def extract_docstring(text: str) -> str:
     raise DocstringException()
 
 
-def format_steps(message_history: list[dict[str, str]], step_index: int | None = None) -> str:
+def format_steps(message_history: list[dict[str, str]]) -> str:
     previous_steps = list()
     for i in range(0, len(message_history[-10:]), 2):
         each_request_message, each_response_message = message_history[i:i + 2]
@@ -60,16 +60,15 @@ def format_steps(message_history: list[dict[str, str]], step_index: int | None =
 
         each_request = each_request_message["content"]
         each_response = each_response_message["content"]
-        index_str = f"{i // 2 + 1}" if step_index is None else f"{step_index}"
 
-        each_step = (f"Step {index_str}:\n"
-                     f"  Action: {each_request.strip()}\n"
-                     f"  Result: {each_response.strip()}\n"
-                     f"===\n")
+        each_step = (
+            f"Action: {each_request.strip()}\n"
+            f"Result: {each_response.strip()}\n"
+        )
 
         previous_steps.append(each_step)
 
-    return "\n".join(previous_steps)
+    return "===\n".join(previous_steps)
 
 
 def extract_code_blocks(text: str, code_type: str | None = None) -> tuple[str, ...]:

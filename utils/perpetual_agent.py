@@ -149,6 +149,7 @@ class PerpetualAgent:
         print(f"{colorama.Fore.CYAN}{improved_request}{colorama.Style.RESET_ALL}\n")
 
         result_length_limit = 2_000
+        summary_length_limit = 5_000
 
         i = 1
         previous_steps = list()
@@ -156,7 +157,7 @@ class PerpetualAgent:
         while True:
             # step_description = LLMMethods.sample_next_step(improved_request, previous_steps, model="gpt-4", temperature=.2)
             # step_description = LLMMethods.sample_next_step(improved_request, previous_steps, model="gpt-3.5-turbo", temperature=.0)
-            step_description = LLMMethods.sample_next_step_summary(improved_request, summary, model="gpt-3.5-turbo")
+            step_description = LLMMethods.sample_next_step_from_summary(improved_request, summary, model="gpt-3.5-turbo")
             # step_description = LLMMethods._sample_next_step(improved_request, previous_steps, model="gpt-3.5-turbo", temperature=.0)
             self.main_logger.info(step_description)
 
@@ -184,8 +185,14 @@ class PerpetualAgent:
                 {"role": "assistant", "content": result}
             ]
             formatted_step = format_steps(this_step)
-            summary = LLMMethods.summarize(summary + "\n" + formatted_step, instruction="Summarize the actions and results from the text above.", model="gpt-3.5-turbo")
+            summary += "\n" + formatted_step
+            if len(summary) >= summary_length_limit:
+                summary = LLMMethods.summarize(summary, instruction="Summarize the actions and results from the text above.", model="gpt-3.5-turbo")
             previous_steps.extend(this_step)
+
+            summary_output = f"{colorama.Fore.RED}  Summary: {summary}{colorama.Style.RESET_ALL}"
+            print(summary_output)
+            self.main_logger.info(summary)
 
             # "model": "gpt-3.5-turbo-16k-0613"
             # "model": "gpt-4-32k-0613"
