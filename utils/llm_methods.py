@@ -27,6 +27,24 @@ class ExtractionException(Exception):
     pass
 
 
+make_code_prompt = (f"Available helper functions:\n"
+                    "{tool_descriptions}\n"
+                    f"=================\n"
+                    f"Docstring:\n"
+                    "{docstring}\n"
+                    f"=================\n"
+                    "Generate a Python function that fully implements the docstring above. Make it general enough to be used in diverse use cases and contexts. The "
+                    "function must be type hinted, working, and every aspect must be implement according to the docstring.\n"
+                    "\n"
+                    "Make use of the available helper functions from the list above by importing them from the tools module (e.g. for the calculate tool: `from "
+                    "tools.calculate import calculate`).\n"
+                    "\n"
+                    "Do not use placeholders that must be filled in later (e.g. API keys).\n"
+                    "\n"
+                    "Respond with a single Python code block containing only the required imports as well as the function including the above docstring. Format the "
+                    "docstring according to the Google style guide.\n")
+
+
 class LLMMethods(ABC):
     openai.api_key_path = "resources/openai_api_key.txt"
 
@@ -109,11 +127,11 @@ class LLMMethods(ABC):
         return response
 
     @staticmethod
-    def extract_arguments(previous_messages: list[dict[str, str]], tool_schema: dict[str, any], prompt: str, **parameters: any) -> dict[str, any]:
+    def extract_arguments(full_description: str, tool_schema: dict[str, any], **parameters: any) -> dict[str, any]:
         response = openai_chat(
             f"extracting with `{tool_schema['name']}`",
             **parameters,
-            messages=previous_messages + [{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": full_description}],
             functions=[tool_schema],
             function_call={"name": tool_schema["name"]}
         )
@@ -332,32 +350,24 @@ class LLMMethods(ABC):
         return code[0]
 
     @staticmethod
-    def make_code(toolbox: ToolBox, docstring: str, message_history: list[dict[str, str]] | None = None, **parameters: any) -> str:
+    def make_code(toolbox: ToolBox, docstring: str, **parameters: any) -> str:
         all_tools = toolbox.get_all_tools()
         tool_description_lines = [toolbox.get_description_from_name(each_name) for each_name in all_tools]
         tool_descriptions = "\n".join(f"- {each_description}" for each_description in tool_description_lines)
 
-        prompt = (f"Available helper functions:\n"
-                  f"{tool_descriptions}\n"
-                  f"=================\n"
-                  f"Docstring:\n"
-                  f"{docstring}\n"
-                  f"=================\n"
-                  "Generate a Python function that fully implements the docstring above. Make it general enough to be used in diverse use cases and contexts. The "
-                  "function must be type hinted, working, and every aspect must be implement according to the docstring.\n"
-                  "\n"
-                  "Make use of the available helper functions from the list above by importing them from the tools module (e.g. for the calculate tool: `from "
-                  "tools.calculate import calculate`).\n"
-                  "\n"
-                  "Do not use placeholders that must be filled in later (e.g. API keys).\n"
-                  "\n"
-                  "Respond with a single Python code block containing only the required imports as well as the function including the above docstring. Format the "
-                  "docstring according to the Google style guide.\n")
+        prompt = make_code_prompt.format(tool_descriptions=tool_descriptions, docstring=docstring)
 
-        history = list() if message_history is None else list(message_history)
+        response = openai_chat(
+            "make_code",
+            **parameters,
+            messages=[{"role": "user", "content": prompt}],
+            stream=False
+        )
 
-        response = LLMMethods.respond(prompt, history, function_id="make_code", **parameters)
-        code = extract_code_blocks(response)
+        response_message = response.choices[0]["message"]
+        content = response_message["content"]
+
+        code = extract_code_blocks(content)
         return code[0]
 
     @staticmethod
@@ -367,14 +377,14 @@ class LLMMethods(ABC):
                   f"===\n"
                   "\n"
                   "Generate a Google style docstring in triple quotation marks for a Python function that could solve the task above. Describe the function as if it "
-                  "already existed. Make it is easy to infer from the description which use cases and contexts the function can be applied to. Use function arguments to "
+                  "already existed. Make it is easy to infer from the description which use cases and contexts the function applies to. Use function arguments to "
                   "make sure that the function can be applied to other tasks as well.\n"
                   "\n"
                   "The docstring must contain a function description, as well as the sections \"Example\", \"Args\", and \"Returns\". Make sure to indent the content "
                   "of each section.\n"
                   "\n"
-                  "Call the function in the Example section like so: `>>> function_name(<arguments>)` Provide only one example with arguments for a representative use "
-                  "case. Do not show the return value of the function call.\n"
+                  "Call the function in the Example section like so: `>>> function_name(arg, [...], kwarg=val, [...])` Provide only one example with arguments for a "
+                  "representative use case. Do not show the return value of the function call.\n"
                   "\n"
                   "Do not mention particular use cases or contexts in the description.\n"
                   "Mention the name of the function only in the Example section but not in the description.\n"

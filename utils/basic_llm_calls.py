@@ -36,6 +36,7 @@ def openai_chat(function_id: str, *args: any, **kwargs: any) -> OpenAIObject:
 
 
 def get_embeddings(segments: list[str]) -> list[list[float]]:
+    # todo: check this: https://www.youtube.com/watch?v=QdDoFfkVkcw
     model = "text-embedding-ada-002"  # max input tokens: 8191, dimensions: 1536
     # model = "text-similarity-davinci-001"
     # model = "text-similarity-curie-001"

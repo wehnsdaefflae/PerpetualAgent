@@ -50,6 +50,12 @@ class ToolBox:
         db.save(database_path)
         return db
 
+    def get_all_descriptions(self) -> list[str]:
+        return [self.get_description_from_name(each_name) for each_name in self.get_all_tools()]
+
+    def get_all_descriptions_string(self) -> str:
+        return "\n".join(f"- {each_description}" for each_description in self.get_all_descriptions())
+
     def get_all_tools(self) -> dict[str, types.FunctionType]:
         functions = dict()
         for file_name in os.listdir(self.tool_folder):
