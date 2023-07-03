@@ -62,7 +62,7 @@ def format_steps(message_history: list[dict[str, str]]) -> str:
         each_response = each_response_message["content"]
 
         each_step = (
-            f"Action: {each_request.strip()}\n"
+            f"Last action: {each_request.strip()}\n"
             f"Result: {each_response.strip()}\n"
         )
 

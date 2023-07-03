@@ -8,7 +8,7 @@ import importlib.util
 import inspect
 
 import hyperdb
-from docstring_parser import parse, Docstring
+from docstring_parser import parse, Docstring, DocstringStyle
 
 from utils.basic_llm_calls import get_embeddings
 from utils.logging_handler import logging_handlers
@@ -123,7 +123,7 @@ class ToolBox:
 
     def get_schema_from_code(self, code: str) -> dict[str, str]:
         docstring = self.get_docstring_from_code(code)
-        parsed_doc = parse(docstring)
+        parsed_doc = parse(docstring, style=DocstringStyle.GOOGLE)
         args_section = parsed_doc.params
 
         tool = self.get_temp_tool_from_code(code)
@@ -156,7 +156,7 @@ class ToolBox:
 
     def get_docstring_from_tool(self, tool: types.FunctionType) -> Docstring:
         tool_doc = inspect.getdoc(tool)
-        parsed_doc = parse(tool_doc)
+        parsed_doc = parse(tool_doc, style=DocstringStyle.GOOGLE)
         return parsed_doc
 
     def get_docstring_from_code(self, code: str) -> str:

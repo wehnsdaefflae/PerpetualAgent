@@ -88,7 +88,7 @@ class LLMMethods(ABC):
         # segment text
         len_text = len(text)
         segments = [text[max(0, i - overlap):min(i + segment_size + overlap, len_text)].strip() for i in range(0, len_text, segment_size)]
-        print(f"Summarizing {len(segments)}...")
+        logger.info(f"Summarizing {len(segments)} segments...")
 
         for i in range(len(segments)):
             if i >= 1:
@@ -97,18 +97,22 @@ class LLMMethods(ABC):
             if i < len(segments) - 1:
                 segments[i] += "[...]"
 
+        logger.info("Initializing database...")
         db = hyperdb.HyperDB()
 
         # embed
+        logger.info("Embedding...")
         embeddings = get_embeddings([request] + segments)
 
         request_vector = embeddings[0]
         segment_vectors = embeddings[1:]
 
         # put embeddings in database
+        logger.info("Adding to database...")
         db.add_documents(segments, vectors=segment_vectors)
 
         # get nearest neighbors
+        logger.info("Getting nearest neighbors...")
         nearest_neighbor_indices, _ = hyper_SVM_ranking_algorithm_sort(
             db.vectors,
             numpy.array(request_vector),
@@ -384,6 +388,8 @@ class LLMMethods(ABC):
                   "\n"
                   "Call the function in the Example section like so: `>>> function_name(arg, [...], kwarg=val, [...])` Provide only one example with arguments for a "
                   "representative use case. Do not show the return value of the function call.\n"
+                  "\n"
+                  "Use exactly one line for each argument in the Args section."
                   "\n"
                   "Do not mention particular use cases or contexts in the description.\n"
                   "Mention the name of the function only in the Example section but not in the description.\n"
