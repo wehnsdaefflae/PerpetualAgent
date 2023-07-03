@@ -166,10 +166,11 @@ class PerpetualAgent:
         summary_length_limit = 5_000
 
         i = 1
-        progress_summary = "[nothing happened yet]"
+        progress_summary = "[no steps yet]\n"
         while True:
             # "gpt-3.5-turbo-16k-0613", "gpt-4-32k-0613", "gpt-4-0613", "gpt-3.5-turbo-0613"
-            step_description = LLMMethods.sample_next_step_from_summary(improved_request, progress_summary, model="gpt-3.5-turbo")
+            # step_description = LLMMethods.sample_next_step_from_summary(improved_request, progress_summary, model="gpt-3.5-turbo")
+            step_description = LLMMethods.sample_next_action_from_summary(improved_request, progress_summary, model="gpt-4")
             self.main_logger.info(step_description)
 
             output_step = f"Step {i}:"
@@ -185,7 +186,7 @@ class PerpetualAgent:
                 return result
 
             if len(progress_summary) >= summary_length_limit:
-                progress_summary = LLMMethods.summarize(progress_summary, instruction="Summarize the actions and results from the text above.", model="gpt-3.5-turbo")
+                progress_summary = LLMMethods.summarize(progress_summary, instruction="Summarize the steps from above.", model="gpt-3.5-turbo")
 
             this_step = [
                 {"role": "user", "content": step_description},

@@ -240,8 +240,9 @@ class LLMMethods(ABC):
         return response
 
     @staticmethod
-    def sample_next_step_from_summary(request: str, history_summary: str, **parameters: any) -> str:
-        prompt = (f"Request: {request}\n"
+    def sample_next_action_from_summary(request: str, history_summary: str, **parameters: any) -> str:
+        prompt = (f"Request:\n"
+                  f"{request}\n"
                   f"===\n"
                   f"\n")
 
@@ -254,14 +255,15 @@ class LLMMethods(ABC):
                        f"{history_summary}\n"
                        f"===\n"
                        f"\n")
-            prompt += (f"Think step-by-step: What would be a computer's next action in order to fulfill the request and given the progress reported above? Provide a "
-                       f"one-sentence command in natural language for a single simple action towards fulfilling the request at hand.\n"
+            prompt += (f"Think step-by-step: Given the progress report, what conclusions do you draw with regarding the request above? What would be a computer's "
+                       f"next action in order to fulfill the request? Provide a one-sentence command in natural language for a single simple action towards fulfilling "
+                       f"the request at hand.\n"
                        f"\n"
-                       "If the previous action has failed according to the progress report, do not instruct the exact same action again but instead retry variants "
-                       "once or twice. If variants of the action fail as well, try a whole different approach instead.\n"
-                       "\n"
-                       f"Finalize the response when the request is fulfilled through the steps listed in the progress report.")
-
+                       # "If the previous action has failed according to the progress report, do not instruct the exact same action again but instead retry variants "
+                       # "once or twice. If variants of the action fail as well, try a whole different approach instead.\n"
+                       # "\n"
+                       f"Finalize the response if the request is fulfilled according to the progress report.\n"
+                       f"\n")
         response = LLMMethods.respond(prompt, list(), function_id="sample_next_step_summary", **parameters)
         return response
 
@@ -314,7 +316,7 @@ class LLMMethods(ABC):
         tool_name = toolbox.vector_db.documents[document_index]
         logger.info(f"Selected tool: {tool_name} with fitness {fitness:.2f}")
 
-        if fitness < .9:
+        if fitness < .95:
             return None
 
         return tool_name
