@@ -5,6 +5,7 @@ from traceback import format_exc
 
 import openai
 from openai.openai_object import OpenAIObject
+from sentence_transformers import SentenceTransformer
 
 from utils.logging_handler import logging_handlers
 
@@ -36,6 +37,13 @@ def openai_chat(function_id: str, *args: any, **kwargs: any) -> OpenAIObject:
 
 
 def get_embeddings(segments: list[str]) -> list[list[float]]:
+    model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    embedding_numpy = model.encode(segments)
+    embedding = embedding_numpy.tolist()
+    return embedding
+
+
+def _get_embeddings(segments: list[str]) -> list[list[float]]:
     # todo: check this: https://www.youtube.com/watch?v=QdDoFfkVkcw
     model = "text-embedding-ada-002"  # max input tokens: 8191, dimensions: 1536
     # model = "text-similarity-davinci-001"

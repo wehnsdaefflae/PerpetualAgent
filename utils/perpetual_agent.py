@@ -35,74 +35,80 @@ class PerpetualAgent:
         new_tool_code = None
         tool_name = LLMMethods.select_tool_name(self.toolbox, docstring)
 
+        each_attempt = 0
         max_attempts = 3
-        attempts = 0
 
         code_prompt = make_code_prompt.format(tool_descriptions=self.toolbox.get_all_descriptions_string(), docstring=docstring)
         code_history = [{"role": "user", "content": code_prompt}]
 
-        # take tool_arguments or function_description
-        if tool_name is None:
-            print(f"{colorama.Fore.YELLOW}  New action:{colorama.Style.RESET_ALL}", end=" ")
-            try:
-                response = openai_chat("make_code", code_history, model="gpt-4")
-                message = response["choices"][0]["message"]
-                code_history.append({"role": "assistant", "content": message})
-                new_tool_code = message["content"]
+        while True:
+            # new tool
+            if tool_name is None:
+                print(f"{colorama.Fore.YELLOW}  New action:{colorama.Style.RESET_ALL}", end=" ")
+                try:
+                    response = openai_chat("make_code", code_history, model="gpt-4")
+                    message = response["choices"][0]["message"]
+                    code_history.append({"role": "assistant", "content": message})
+                    new_tool_code = message["content"]
 
-                tool_name = self.toolbox.get_name_from_code(new_tool_code)
-                tool = self.toolbox.get_temp_tool_from_code(new_tool_code)
-                schema = self.toolbox.get_schema_from_code(new_tool_code)
-                _description = self.toolbox.get_description_from_code(new_tool_code)
+                    tool_name = self.toolbox.get_name_from_code(new_tool_code)
+                    tool = self.toolbox.get_temp_tool_from_code(new_tool_code)
+                    schema = self.toolbox.get_schema_from_code(new_tool_code)
+                    _description = self.toolbox.get_description_from_code(new_tool_code)
+
+                except Exception as e:
+                    exception_message = f"Tool creation failed, invalid code: {e}."
+                    self.main_logger.error(exception_message)
+                    return exception_message, False
+
+            # existing tool
+            else:
+                print(f"{colorama.Fore.YELLOW}  Action:{colorama.Style.RESET_ALL}", end=" ")
+                tool = self.toolbox.get_tool_from_name(tool_name)
+                schema = self.toolbox.get_schema_from_name(tool_name)
+
+            # extract arguments
+            try:
+                arguments = LLMMethods.extract_arguments(summary + "\n\n" + step_description, schema, model="gpt-3.5-turbo-0613")
+
+            except ExtractionException as e:
+                exception_message = format_exc()
+                self.main_logger.error(exception_message)
+                return f"Extraction of arguments failed: {exception_message}", False
+
+            truncated_arguments = ", ".join(f"str({k})={truncate(str(v), 50)!r}" for k, v in arguments.items())
+            tool_call = f"{tool_name}({truncated_arguments})"
+            user_input = input(f"{colorama.Fore.YELLOW}{tool_call}{colorama.Style.RESET_ALL} [y/N]? ")
+            if user_input != "y":
+                return f"Action `{tool_call}` rejected by user.", False
+
+            self.main_logger.info(f"Executing action `{tool_call}`.")
+
+            # call tool
+            try:
+                result = tool(**arguments)
+                del tool
+                if tool_name == "finalize":
+                    return result, True
+
+                if new_tool_code is not None:
+                    self.toolbox.save_tool_code(new_tool_code, False)
+
+                result_json = json.dumps(result)
+                return result_json, False
 
             except Exception as e:
-                exception_message = f"Creation of action failed: {e}."
+                exception_message = format_exc()
                 self.main_logger.error(exception_message)
-                return exception_message, False
+                if new_tool_code is None:
+                    return f"Execution of action failed: {e}", False
 
-        else:
-            print(f"{colorama.Fore.YELLOW}  Action:{colorama.Style.RESET_ALL}", end=" ")
-            tool = self.toolbox.get_tool_from_name(tool_name)
-            schema = self.toolbox.get_schema_from_name(tool_name)
+                elif each_attempt >= max_attempts:
+                    return f"Tool creation failed, cannot be applied: {e}", False
 
-        try:
-            arguments = LLMMethods.extract_arguments(summary + "\n\n" + step_description, schema, model="gpt-3.5-turbo-0613")
-
-        except ExtractionException as e:
-            exception_message = format_exc()
-            self.main_logger.error(exception_message)
-            return f"Extraction of arguments failed: {exception_message}", False
-
-        truncated_arguments = ", ".join(f"str({k})={truncate(str(v), 50)!r}" for k, v in arguments.items())
-        tool_call = f"{tool_name}({truncated_arguments})"
-        user_input = input(f"{colorama.Fore.YELLOW}{tool_call}{colorama.Style.RESET_ALL} [y/N]? ")
-        if user_input != "y":
-            return f"Action `{tool_call}` rejected by user.", False
-
-        self.main_logger.info(f"Executing action `{tool_call}`.")
-
-        try:
-            result = tool(**arguments)
-
-        except Exception as e:
-            exception_message = format_exc()
-            self.main_logger.error(exception_message)
-            code_history.append({"role": "user", "content": exception_message})
-            if new_tool_code is not None:
-                # xxx
-            # if new_code is not None: goto if tool_name is None
-            # return only if failed 3 times
-            return f"Execution of action failed: {e}", False
-
-        del tool
-        if tool_name == "finalize":
-            return result, True
-
-        if new_tool_code is not None:
-            self.toolbox.save_tool_code(new_tool_code, False)
-
-        result_json = json.dumps(result)
-        return result_json, False
+                code_history.append({"role": "user", "content": exception_message})
+                each_attempt += 1
+                self.main_logger.info(f"Tool creation failed at attempt {each_attempt}: {e}.")
 
     def respond(self, main_request: str) -> str:
         improved_request = LLMMethods.improve_request(main_request, model="gpt-3.5-turbo")
