@@ -296,7 +296,6 @@ class LLMMethods(ABC):
 
     @staticmethod
     def select_tool_name(toolbox: ToolBox, function_description: str) -> str | None:
-
         # get embedding for task_description
         embedding, = get_embeddings([function_description])
 

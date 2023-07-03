@@ -1,6 +1,12 @@
+# coding=utf-8
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModel
 
+
+# https://huggingface.co/spaces/mteb/leaderboard
+# https://www.sbert.net/
+
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
 model = SentenceTransformer("ggrn/e5-small-v2")
 embedding_numpy = model.encode(["Hello, my dog is cute."])

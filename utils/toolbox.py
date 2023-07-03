@@ -80,8 +80,8 @@ class ToolBox:
     def save_tool_code(self, code: str, is_temp: bool) -> None:
         self._save_tool_code(code, is_temp=is_temp)
         if not is_temp:
-            description = self.get_docstring_description_from_code(code)
-            embedding, = get_embeddings([description])
+            tool_description = self.get_docstring_description_from_code(code)
+            embedding, = get_embeddings([tool_description])
             tool_name = self.get_name_from_code(code)
             self.vector_db.add_document(tool_name, embedding)
             self.vector_db.save(self.database_path)
@@ -175,14 +175,18 @@ class ToolBox:
         code = self.get_code_from_name(name)
         return self.get_docstring_from_code(code)
 
-    def get_docstring_description_from_code(self, code: str) -> str:
-        tool_doc = self.get_docstring_from_code(code)
-        parsed_doc = parse(tool_doc)
+    def get_description_from_docstring(self, docstring: str) -> str:
+        parsed_doc = parse(docstring)
         tool_short_description = parsed_doc.short_description
         tool_long_description = parsed_doc.long_description
         if tool_long_description is None:
             return tool_short_description
         return " ".join(tool_short_description.split("\n")) + " " + " ".join(tool_long_description.split("\n"))
+
+    def get_docstring_description_from_code(self, code: str) -> str:
+        tool_doc = self.get_docstring_from_code(code)
+        description = self.get_description_from_docstring(tool_doc)
+        return description
 
     def get_required_from_code(self, code: str) -> list[str]:
         module = ast.parse(code)

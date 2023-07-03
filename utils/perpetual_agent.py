@@ -1,6 +1,8 @@
 # coding=utf-8
+import dataclasses
 import json
 import logging
+import types
 from traceback import format_exc
 
 import colorama
@@ -8,7 +10,7 @@ import colorama
 from utils.basic_llm_calls import openai_chat
 from utils.llm_methods import LLMMethods, ExtractionException, make_code_prompt
 from utils.logging_handler import logging_handlers
-from utils.misc import truncate, format_steps
+from utils.misc import truncate, format_steps, extract_code_blocks
 from utils.toolbox import ToolBox
 
 
@@ -18,6 +20,117 @@ class ToolCreationException(Exception):
 
 class ToolApplicationException(Exception):
     pass
+
+
+@dataclasses.dataclass
+class ToolResult:
+    result: str
+    is_finalized: bool
+    succeeded: bool
+
+
+class Processor:
+    def __init__(self, toolbox: ToolBox, implementation_attempts: int = 3) -> None:
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+        for each_handler in logging_handlers():
+            self.logger.addHandler(each_handler)
+
+        self.toolbox = toolbox
+        self.implementation_attempts = implementation_attempts
+
+    def extract_arguments(self, state: str, tool_name: str) -> dict[str, any]:
+        tool_schema = self.toolbox.get_schema_from_name(tool_name)
+        arguments = LLMMethods.extract_arguments(state, tool_schema)
+        return arguments
+
+    def make_code(self, message_history: list[dict[str, any]]) -> str:
+        response = openai_chat("make_code", message_history, model="gpt-4")
+        message = response["choices"][0]["message"]
+        content = message["content"]
+
+        try:
+            tool_code = extract_code_blocks(content)[0]
+            tool_name = self.toolbox.get_name_from_code(tool_code)
+            tool = self.toolbox.get_temp_tool_from_code(tool_code)
+            schema = self.toolbox.get_schema_from_code(tool_code)
+            _description = self.toolbox.get_description_from_code(tool_code)
+            message_history.append(
+                {"role": "assistant", "content": message}
+            )
+            return tool_code
+
+        except Exception as e:
+            self.logger.error(f"Error while extracting tool code: {e}")
+            raise ToolCreationException("Error while extracting tool code.") from e
+
+    def confirmation(self, tool_name: str, arguments: dict[str, any]) -> bool:
+        truncated_arguments = ", ".join(f"str({k})={truncate(str(v), 50)!r}" for k, v in arguments.items())
+        tool_call = f"{tool_name}({truncated_arguments})"
+
+        response = input(f"{tool_call} [y/N]: ")
+        return "y" == response.lower().strip()
+
+    def apply_tool(self, state: str, tool: types.FunctionType, is_temp_tool: bool) -> ToolResult:
+        tool_name = tool.__name__
+        arguments = self.extract_arguments(state, tool_name)
+
+        try:
+            result = tool(**arguments)
+
+        except Exception as e:
+            result = f"Error while applying tool '{tool_name}': {e}"
+            self.logger.error(result)
+            if is_temp_tool:
+                trace = format_exc()
+                self.logger.error(trace)
+                return ToolResult(trace, False, False)
+
+        finally:
+            del tool
+
+        return ToolResult(result, tool_name == "finalize", True)
+
+    def apply_new_tool(self, state: str, docstring: str) -> str:
+        tool_descriptions_string = self.toolbox.get_all_descriptions_string()
+        code_prompt = make_code_prompt.format(tool_descriptions=tool_descriptions_string, docstring=docstring)
+        message_history = [
+            {"role": "user", "content": code_prompt}
+        ]
+
+        for _ in range(self.implementation_attempts):
+            try:
+                new_tool_code = self.make_code(message_history)
+
+            except ToolCreationException as e:
+                self.logger.error(e)
+                return f"Tool creation failed. {e}"
+
+            tmp_tool = self.toolbox.get_temp_tool_from_code(new_tool_code)
+            tool_result = self.apply_tool(state, tmp_tool, True)
+            if tool_result.succeeded:
+                self.toolbox.save_tool_code(new_tool_code, False)
+                return tool_result.result
+
+            message_history.append(
+                {"role": "user", "content": tool_result.result}
+            )
+
+        return f"Tool application failed permanently after {self.implementation_attempts} tries."
+
+    def pipeline(self, progress_summary: str, action_description: str) -> str:
+        complete_state = progress_summary + "\n\n" + action_description
+        docstring = LLMMethods.make_function_docstring(action_description, model="gpt-4")
+        tool_description = self.toolbox.get_description_from_docstring(docstring)
+
+        tool_name = LLMMethods.select_tool_name(self.toolbox, tool_description)
+        if tool_name is None:
+            result = self.apply_new_tool(complete_state, docstring)
+            return result
+
+        tool = self.toolbox.get_tool_from_name(tool_name)
+        tool_result = self.apply_tool(progress_summary, tool, False)
+        return tool_result.result
 
 
 class PerpetualAgent:
@@ -32,8 +145,9 @@ class PerpetualAgent:
         print(f"  {colorama.Fore.GREEN}Command: {step_description}{colorama.Style.RESET_ALL}")
 
         docstring = LLMMethods.make_function_docstring(step_description, model="gpt-4")
+        tool_description = self.toolbox.get_description_from_docstring(docstring)
         new_tool_code = None
-        tool_name = LLMMethods.select_tool_name(self.toolbox, docstring)
+        tool_name = LLMMethods.select_tool_name(self.toolbox, tool_description)
 
         each_attempt = 0
         max_attempts = 3
@@ -49,7 +163,8 @@ class PerpetualAgent:
                     response = openai_chat("make_code", code_history, model="gpt-4")
                     message = response["choices"][0]["message"]
                     code_history.append({"role": "assistant", "content": message})
-                    new_tool_code = message["content"]
+                    content = message["content"]
+                    new_tool_code = extract_code_blocks(content)[0]
 
                     tool_name = self.toolbox.get_name_from_code(new_tool_code)
                     tool = self.toolbox.get_temp_tool_from_code(new_tool_code)
