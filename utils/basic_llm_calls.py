@@ -37,7 +37,8 @@ def openai_chat(function_id: str, *args: any, **kwargs: any) -> OpenAIObject:
 
 
 def get_embeddings(segments: list[str]) -> list[list[float]]:
-    model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    # model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    model = SentenceTransformer("ggrn/e5-small-v2")
     embedding_numpy = model.encode(segments)
     embedding = embedding_numpy.tolist()
     return embedding
