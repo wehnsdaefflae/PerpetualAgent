@@ -29,8 +29,8 @@ class ToolResult:
     succeeded: bool
 
 
-class Processor:
-    def __init__(self, toolbox: ToolBox, implementation_attempts: int = 3) -> None:
+class StepProcessor:
+    def __init__(self, toolbox: ToolBox, implementation_attempts: int = 3, result_limit: int = 2_000) -> None:
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
         for each_handler in logging_handlers():
@@ -38,23 +38,24 @@ class Processor:
 
         self.toolbox = toolbox
         self.implementation_attempts = implementation_attempts
+        self.result_limit = result_limit
 
-    def extract_arguments(self, state: str, tool_name: str) -> dict[str, any]:
+    def _extract_arguments(self, state: str, tool_name: str) -> dict[str, any]:
         tool_schema = self.toolbox.get_schema_from_name(tool_name)
         arguments = LLMMethods.extract_arguments(state, tool_schema)
         return arguments
 
-    def make_code(self, message_history: list[dict[str, any]]) -> str:
-        response = openai_chat("make_code", message_history, model="gpt-4")
+    def _make_code(self, message_history: list[dict[str, any]]) -> str:
+        response = openai_chat("make_code", messages=message_history, model="gpt-4")
         message = response["choices"][0]["message"]
         content = message["content"]
 
         try:
             tool_code = extract_code_blocks(content)[0]
-            tool_name = self.toolbox.get_name_from_code(tool_code)
-            tool = self.toolbox.get_temp_tool_from_code(tool_code)
-            schema = self.toolbox.get_schema_from_code(tool_code)
-            _description = self.toolbox.get_description_from_code(tool_code)
+            _ = self.toolbox.get_name_from_code(tool_code)
+            _ = self.toolbox.get_temp_tool_from_code(tool_code)
+            _ = self.toolbox.get_schema_from_code(tool_code)
+            _ = self.toolbox.get_description_from_code(tool_code)
             message_history.append(
                 {"role": "assistant", "content": message}
             )
@@ -64,16 +65,20 @@ class Processor:
             self.logger.error(f"Error while extracting tool code: {e}")
             raise ToolCreationException("Error while extracting tool code.") from e
 
-    def confirmation(self, tool_name: str, arguments: dict[str, any]) -> bool:
+    def _confirmation(self, tool_name: str, arguments: dict[str, any]) -> bool:
         truncated_arguments = ", ".join(f"str({k})={truncate(str(v), 50)!r}" for k, v in arguments.items())
         tool_call = f"{tool_name}({truncated_arguments})"
 
-        response = input(f"{tool_call} [y/N]: ")
+        response = input(f"{tool_call}{colorama.Style.RESET_ALL} [y/N]: ")
         return "y" == response.lower().strip()
 
-    def apply_tool(self, state: str, tool: types.FunctionType, is_temp_tool: bool) -> ToolResult:
+    def _apply_tool(self, state: str, tool: types.FunctionType, is_temp_tool: bool) -> ToolResult:
         tool_name = tool.__name__
-        arguments = self.extract_arguments(state, tool_name)
+        arguments = self._extract_arguments(state, tool_name)
+
+        if not self._confirmation(tool_name, arguments):
+            del tool
+            return ToolResult("User rejected tool.", False, True)
 
         try:
             result = tool(**arguments)
@@ -91,7 +96,7 @@ class Processor:
 
         return ToolResult(result, tool_name == "finalize", True)
 
-    def apply_new_tool(self, state: str, docstring: str) -> str:
+    def _apply_new_tool(self, state: str, docstring: str) -> ToolResult:
         tool_descriptions_string = self.toolbox.get_all_descriptions_string()
         code_prompt = make_code_prompt.format(tool_descriptions=tool_descriptions_string, docstring=docstring)
         message_history = [
@@ -100,48 +105,63 @@ class Processor:
 
         for _ in range(self.implementation_attempts):
             try:
-                new_tool_code = self.make_code(message_history)
+                new_tool_code = self._make_code(message_history)
 
             except ToolCreationException as e:
                 self.logger.error(e)
-                return f"Tool creation failed. {e}"
+                return ToolResult(f"Tool creation failed. {e}", False, False)
 
             tmp_tool = self.toolbox.get_temp_tool_from_code(new_tool_code)
-            tool_result = self.apply_tool(state, tmp_tool, True)
+            tool_result = self._apply_tool(state, tmp_tool, True)
             if tool_result.succeeded:
                 self.toolbox.save_tool_code(new_tool_code, False)
-                return tool_result.result
+                return tool_result
 
             message_history.append(
                 {"role": "user", "content": tool_result.result}
             )
 
-        return f"Tool application failed permanently after {self.implementation_attempts} tries."
+        return ToolResult(f"Tool application failed permanently after {self.implementation_attempts} attempts.", False, False)
 
-    def pipeline(self, progress_summary: str, action_description: str) -> str:
+    def _condense_result(self, result: str, action_description: str) -> str:
+        if len(result) > self.result_limit:
+            result = LLMMethods.vector_summarize(action_description, result, model="gpt-3.5-turbo-0613")
+        return result
+
+    def pipeline(self, progress_summary: str, action_description: str) -> tuple[str, bool]:
+        print(f"{colorama.Fore.CYAN}Summary: {progress_summary}")
+        print(f"{colorama.Fore.YELLOW}Action: {action_description}")
         complete_state = progress_summary + "\n\n" + action_description
         docstring = LLMMethods.make_function_docstring(action_description, model="gpt-4")
         tool_description = self.toolbox.get_description_from_docstring(docstring)
 
         tool_name = LLMMethods.select_tool_name(self.toolbox, tool_description)
         if tool_name is None:
-            result = self.apply_new_tool(complete_state, docstring)
-            return result
+            print(f"{colorama.Fore.RED}{colorama.Style.BRIGHT}New tool: ", end="")
+            tool_result = self._apply_new_tool(complete_state, docstring)
+            print(f"{colorama.Style.RESET_ALL}", end="")
 
-        tool = self.toolbox.get_tool_from_name(tool_name)
-        tool_result = self.apply_tool(progress_summary, tool, False)
-        return tool_result.result
+        else:
+            print(f"{colorama.Fore.RED}Tool: ", end="")
+            tool = self.toolbox.get_tool_from_name(tool_name)
+            tool_result = self._apply_tool(progress_summary, tool, False)
+
+        step_result = self._condense_result(tool_result.result, action_description)
+        print(f"{colorama.Fore.BLUE}Result: {truncate(step_result, 200)}{colorama.Style.RESET_ALL}\n")
+        return step_result, tool_result.is_finalized
 
 
 class PerpetualAgent:
     def __init__(self) -> None:
-        self.toolbox = ToolBox("tools/")
         self.main_logger = logging.getLogger()
         self.main_logger.setLevel(logging.INFO)
         for each_handler in logging_handlers():
             self.main_logger.addHandler(each_handler)
 
-    def _get_result(self, step_description: str, summary: str) -> tuple[str, bool]:
+        self.toolbox = ToolBox("tools/")
+        self.processor = StepProcessor(self.toolbox)
+
+    def _get_result_old(self, step_description: str, summary: str) -> tuple[str, bool]:
         print(f"  {colorama.Fore.GREEN}Command: {step_description}{colorama.Style.RESET_ALL}")
 
         docstring = LLMMethods.make_function_docstring(step_description, model="gpt-4")
@@ -230,31 +250,20 @@ class PerpetualAgent:
 
         print(f"{colorama.Fore.CYAN}{improved_request}{colorama.Style.RESET_ALL}\n")
 
-        result_length_limit = 2_000
         summary_length_limit = 5_000
 
         i = 1
         summary = ""
         while True:
-            # step_description = LLMMethods.sample_next_step(improved_request, previous_steps, model="gpt-4", temperature=.2)
-            # step_description = LLMMethods.sample_next_step(improved_request, previous_steps, model="gpt-3.5-turbo", temperature=.0)
+            # "gpt-3.5-turbo-16k-0613", "gpt-4-32k-0613", "gpt-4-0613", "gpt-3.5-turbo-0613"
             step_description = LLMMethods.sample_next_step_from_summary(improved_request, summary, model="gpt-3.5-turbo")
-            # step_description = LLMMethods._sample_next_step(improved_request, previous_steps, model="gpt-3.5-turbo", temperature=.0)
             self.main_logger.info(step_description)
 
             output_step = f"Step {i}:"
             print(output_step)
 
-            # MESSAGE HISTORY = [{"role": "assistant", "content": <last_code>}, {"role": "user", "content": <last_error>}] try 3 times?
-            result, is_finalized = self._get_result(step_description, summary)
-            if len(result) > result_length_limit:
-                result = LLMMethods.vector_summarize(step_description, result, model="gpt-3.5-turbo-0613")
-                output_result = f"{colorama.Fore.BLUE}  Summarized result: {result}{colorama.Style.RESET_ALL}"
-            else:
-                output_result = f"{colorama.Fore.BLUE}  Result: {result}{colorama.Style.RESET_ALL}"
+            result, is_finalized = self.processor.pipeline(summary, step_description)
 
-            print(output_result)
-            self.main_logger.info(result)
             print("====================================\n")
 
             if is_finalized:
@@ -275,10 +284,5 @@ class PerpetualAgent:
             summary_output = f"{colorama.Fore.RED}  Summary: {summary}{colorama.Style.RESET_ALL}"
             print(summary_output)
             self.main_logger.info(summary)
-
-            # "model": "gpt-3.5-turbo-16k-0613"
-            # "model": "gpt-4-32k-0613"
-            # "model": "gpt-4-0613"
-            # "model": "gpt-3.5-turbo-0613"
 
             i += 1

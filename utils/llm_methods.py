@@ -310,7 +310,7 @@ class LLMMethods(ABC):
         tool_name = toolbox.vector_db.documents[document_index]
         logger.info(f"Selected tool: {tool_name} with fitness {fitness:.2f}")
 
-        if fitness < .8:
+        if fitness < .5:
             return None
 
         return tool_name

@@ -1,5 +1,4 @@
 # coding=utf-8
-
 from utils.perpetual_agent import PerpetualAgent
 
 
