@@ -6,7 +6,7 @@ STEP_SUMMARIZER = (
     "EXAMPLE\n"
     "=== Request ===\n"
     "Arrange a meeting with my project team next Tuesday at 10 am, and find a suitable restaurant for lunch afterwards.\n"
-    "\n",
+    "\n"
     "=== Current summary ===\n"
     "After checking the users digital calendar, it was determined that the user is available on next Tuesday at 10 am.\n"
     "LAST ACTION: Send meeting invitations to the members of the project team through the email contacts or a platform like Google Meet, Microsoft Teams, etc."

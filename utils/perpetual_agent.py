@@ -197,7 +197,7 @@ class PerpetualAgent:
             summary_output = f"{colorama.Fore.RED}  Summary: {raw_summary}{colorama.Style.RESET_ALL}"
             print(summary_output)
 
-            summary = (f"{summary.strip()}\n"
+            summary = (f"{raw_summary.strip()}\n"
                        f"LAST ACTION: {action_description.strip()}\n"
                        f"ACTION RESULT: {result.strip()}")
 
