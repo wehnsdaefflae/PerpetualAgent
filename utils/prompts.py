@@ -1,36 +1,36 @@
 # coding=utf-8
+SUMMARY_ACTION_RESULT = (
+    "=== Current summary ===\n"
+    "{summary}\n"
+    "LAST ACTION: {last_action}"
+    "ACTION RESULT: {action_result}"
+)
+
+example = SUMMARY_ACTION_RESULT.format(
+    summary="After checking the users digital calendar, it was determined that the user is available on next Tuesday at 10 am.",
+    last_action="Send meeting invitations to the members of the project team through the email contacts or a platform like Google Meet, Microsoft Teams, etc.",
+    action_result="All team members accept the invitation, and the meeting is successfully scheduled for next Tuesday at 10 am."
+)
+
 STEP_SUMMARIZER = (
-    "Gradually summarize the steps taken to fulfill the request, adding to the previous summary and creating a new "
-    "summary.\n"
+    "Gradually expand the current summary with the last action taken to fulfil the request and the result of that "
+    "action, adding to the previous summary and creating a new one.\n"
     "\n"
     "EXAMPLE\n"
     "=== Request ===\n"
-    "  Arrange a meeting with my project team next Tuesday at 10 am, and find a suitable restaurant for lunch "
-    "afterwards.\n"
-    "\n"
-    "=== Current summary ===\n"
-    "  After checking the user's digital calendar, it was determined that the user is available on next Tuesday at 10 "
-    "am.\n"
-    "\n"
-    "=== New step ===\n"
-    "  ACTION: Send meeting invitations to the members of the project team through the email contacts or a platform "
-    "like Google Meet, Microsoft Teams, etc.\n"
-    "  RESULT: All team members accept the invitation, and the meeting is successfully scheduled for next Tuesday at 10"
-    "am.\n"
+    "Arrange a meeting with my project team next Tuesday at 10 am, and find a suitable restaurant for lunch afterwards.\n"
+    "\n",
+    f"{example}\n"
     "=== New summary ===\n"
-    "  After finding a suitable time for the user, the project team members were invited for the next Tuesday at 10 am "
+    "After finding a suitable time for the user, the project team members were invited for the next Tuesday at 10 am "
     "and everyone accepted the invitation for lunch.\n"
     "END OF EXAMPLE\n"
     "\n"
     "=== Request ===\n"
-    "  {request}\n"
+    "{request}\n"
     "\n"
     "=== Current summary ===\n"
-    "  {summary}\n"
-    "\n"
-    "=== New step ===\n"
-    "  ACTION: {action}\n"
-    "  RESULT: {result}\n"
+    "{summary}\n"
     "\n"
     "=== New summary ==="
 )

@@ -8,7 +8,7 @@ import colorama
 
 from utils.basic_llm_calls import openai_chat
 from utils.llm_methods import LLMMethods
-from utils.prompts import CODER
+from utils.prompts import CODER, REQUEST_SUMMARY_ACTION, SUMMARY_ACTION, SUMMARY_ACTION_RESULT
 from utils.logging_handler import logging_handlers
 from utils.misc import truncate, extract_code_blocks
 from utils.prompts import STEP_SUMMARIZER
@@ -169,19 +169,24 @@ class PerpetualAgent:
         summary_length_limit = 5_000
 
         i = 1
-        progress_summary = "[no steps taken yet]\n"
+        summary = None
         while True:
             # "gpt-3.5-turbo-16k-0613", "gpt-4-32k-0613", "gpt-4-0613", "gpt-3.5-turbo-0613"
             # step_description = LLMMethods.sample_next_step_from_summary(improved_request, progress_summary, model="gpt-3.5-turbo")
             # todo: always keep last step in summary
-            action_description = LLMMethods.sample_next_action_from_summary(
-                improved_request, progress_summary, model="gpt-4")
+            if summary is None:
+                summary = "[nothing happened yet]"
+            else:
+                prompt = STEP_SUMMARIZER.format(summary=summary)
+                summarize(improved_request, summary_with_action_and_result)
+
+            action_description = LLMMethods.sample_next_action_from_summary(improved_request, summary, model="gpt-4")
             self.main_logger.info(action_description)
 
             output_step = f"Step {i}:"
             print(output_step)
 
-            result, is_finalized = self.processor.pipeline(progress_summary, action_description)
+            result, is_finalized = self.processor.pipeline(summary, action_description)
 
             print("====================================\n")
 
@@ -190,16 +195,10 @@ class PerpetualAgent:
                 print("Request fulfilled.")
                 return result
 
-            prompt = STEP_SUMMARIZER.format(
-                request=main_request,
-                summary=progress_summary,
-                action=action_description,
-                result=result)
+            summary_with_action_and_result = SUMMARY_ACTION_RESULT.format(summary=summary, last_action=action_description, action_result=result)
 
-            progress_summary = LLMMethods.respond(prompt, list(), function_id="step_summarizer", model="gpt-3.5-turbo")
-
-            summary_output = f"{colorama.Fore.RED}  Summary: {progress_summary}{colorama.Style.RESET_ALL}"
+            summary_output = f"{colorama.Fore.RED}  Summary: {summary_with_action_and_result}{colorama.Style.RESET_ALL}"
             print(summary_output)
-            self.main_logger.info(progress_summary)
+            self.main_logger.info(summary_with_action_and_result)
 
             i += 1
