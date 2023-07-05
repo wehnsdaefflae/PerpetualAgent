@@ -13,8 +13,7 @@ def get_scientific_research_articles(query: str) -> list[dict[str, str]]:
     Args:
         query (str): The topic or keywords to search for in the database of scientific articles.
 
-    Returns:
-        list[dict]: A list of dictionaries with information about each article. Each dictionary contains the title and the Google Scholar paperID. If no articles are found, returns an empty list.
+    Returns: list[dict]: A list of dictionaries with information about each article. Each dictionary contains the key "title" mapping to the title of the article and the key "paperID" mapping to its Google Scholar ID. If no articles are found, returns an empty list.
     """
 
     url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={parse.quote_plus(query)}"

@@ -7,9 +7,11 @@ from traceback import format_exc
 import colorama
 
 from utils.basic_llm_calls import openai_chat
-from utils.llm_methods import LLMMethods, make_code_prompt
+from utils.llm_methods import LLMMethods
+from utils.prompts import CODER
 from utils.logging_handler import logging_handlers
-from utils.misc import truncate, format_steps, extract_code_blocks
+from utils.misc import truncate, extract_code_blocks
+from utils.prompts import STEP_SUMMARIZER
 from utils.toolbox import ToolBox
 
 
@@ -51,7 +53,7 @@ class StepProcessor:
             _ = self.toolbox.get_schema_from_code(tool_code)
             _ = self.toolbox.get_description_from_code(tool_code)
             message_history.append(
-                {"role": "assistant", "content": message}
+                {"role": "assistant", "content": f"```python\n{tool_code}\n```"}
             )
             return tool_code
 
@@ -91,7 +93,7 @@ class StepProcessor:
 
     def _apply_new_tool(self, state: str, docstring: str) -> ToolResult:
         tool_descriptions_string = self.toolbox.get_all_descriptions_string()
-        code_prompt = make_code_prompt.format(tool_descriptions=tool_descriptions_string, docstring=docstring)
+        code_prompt = CODER.format(tool_descriptions=tool_descriptions_string, docstring=docstring)
         message_history = [
             {"role": "user", "content": code_prompt}
         ]
@@ -116,7 +118,8 @@ class StepProcessor:
                 {"role": "user", "content": tool_result.result}
             )
 
-        return ToolResult(f"Tool application failed permanently after {self.implementation_attempts} attempts.", False, False)
+        return ToolResult(f"Tool application failed permanently after {self.implementation_attempts} attempts.", False,
+                          False)
 
     def _condense_result(self, result: str, action_description: str) -> str:
         if len(result) > self.result_limit:
@@ -166,17 +169,18 @@ class PerpetualAgent:
         summary_length_limit = 5_000
 
         i = 1
-        progress_summary = "[no steps yet]\n"
+        progress_summary = "[no steps taken yet]\n"
         while True:
             # "gpt-3.5-turbo-16k-0613", "gpt-4-32k-0613", "gpt-4-0613", "gpt-3.5-turbo-0613"
             # step_description = LLMMethods.sample_next_step_from_summary(improved_request, progress_summary, model="gpt-3.5-turbo")
-            step_description = LLMMethods.sample_next_action_from_summary(improved_request, progress_summary, model="gpt-4")
-            self.main_logger.info(step_description)
+            action_description = LLMMethods.sample_next_action_from_summary(improved_request, progress_summary,
+                                                                            model="gpt-4")
+            self.main_logger.info(action_description)
 
             output_step = f"Step {i}:"
             print(output_step)
 
-            result, is_finalized = self.processor.pipeline(progress_summary, step_description)
+            result, is_finalized = self.processor.pipeline(progress_summary, action_description)
 
             print("====================================\n")
 
@@ -185,15 +189,13 @@ class PerpetualAgent:
                 print("Request fulfilled.")
                 return result
 
-            if len(progress_summary) >= summary_length_limit:
-                progress_summary = LLMMethods.summarize(progress_summary, instruction="Summarize the steps from above.", model="gpt-3.5-turbo")
+            prompt = STEP_SUMMARIZER.format(
+                request=main_request,
+                summary=progress_summary,
+                action=action_description,
+                result=result)
 
-            this_step = [
-                {"role": "user", "content": step_description},
-                {"role": "assistant", "content": result}
-            ]
-            formatted_step = format_steps(this_step)
-            progress_summary += "\n" + formatted_step
+            progress_summary = LLMMethods.respond(prompt, list(), function_id="step_summarizer", model="gpt-3.5-turbo")
 
             summary_output = f"{colorama.Fore.RED}  Summary: {progress_summary}{colorama.Style.RESET_ALL}"
             print(summary_output)

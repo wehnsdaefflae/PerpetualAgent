@@ -13,7 +13,7 @@ def gather_positions(search_term: str) -> Dict[str, str]:
         search_term (str): The term or phrase that will be searched to gather divergent viewpoints.
         
     Returns:
-        dict: A dictionary where each key-value pair represents a unique standpoint and the related information.
+        dict: A dictionary where each key is a URL and the according value contains information about a unique standpoint.
     """
     ret = dict()
     
