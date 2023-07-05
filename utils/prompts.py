@@ -1,17 +1,4 @@
 # coding=utf-8
-SUMMARY_ACTION_RESULT = (
-    "=== Current summary ===\n"
-    "{summary}\n"
-    "LAST ACTION: {last_action}"
-    "ACTION RESULT: {action_result}"
-)
-
-example = SUMMARY_ACTION_RESULT.format(
-    summary="After checking the users digital calendar, it was determined that the user is available on next Tuesday at 10 am.",
-    last_action="Send meeting invitations to the members of the project team through the email contacts or a platform like Google Meet, Microsoft Teams, etc.",
-    action_result="All team members accept the invitation, and the meeting is successfully scheduled for next Tuesday at 10 am."
-)
-
 STEP_SUMMARIZER = (
     "Gradually expand the current summary with the last action taken to fulfil the request and the result of that "
     "action, adding to the previous summary and creating a new one.\n"
@@ -20,7 +7,10 @@ STEP_SUMMARIZER = (
     "=== Request ===\n"
     "Arrange a meeting with my project team next Tuesday at 10 am, and find a suitable restaurant for lunch afterwards.\n"
     "\n",
-    f"{example}\n"
+    "=== Current summary ===\n"
+    "After checking the users digital calendar, it was determined that the user is available on next Tuesday at 10 am.\n"
+    "LAST ACTION: Send meeting invitations to the members of the project team through the email contacts or a platform like Google Meet, Microsoft Teams, etc."
+    "ACTION RESULT: All team members accept the invitation, and the meeting is successfully scheduled for next Tuesday at 10 am."
     "=== New summary ===\n"
     "After finding a suitable time for the user, the project team members were invited for the next Tuesday at 10 am "
     "and everyone accepted the invitation for lunch.\n"
