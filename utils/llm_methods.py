@@ -11,8 +11,8 @@ from hyperdb import hyper_SVM_ranking_algorithm_sort
 from utils import openai_function_schemata
 from utils.basic_llm_calls import openai_chat, get_embeddings
 from utils.logging_handler import logging_handlers
-from utils.misc import extract_code_blocks, extract_docstring, format_steps
-from utils.prompts import DOCSTRING_WRITER, REQUEST_IMPROVER, CODER
+from utils.misc import extract_docstring, format_steps
+from utils.prompts import DOCSTRING_WRITER, REQUEST_IMPROVER
 from utils.toolbox import ToolBox
 
 logger = logging.getLogger(__name__)

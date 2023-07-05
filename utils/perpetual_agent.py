@@ -173,8 +173,9 @@ class PerpetualAgent:
         while True:
             # "gpt-3.5-turbo-16k-0613", "gpt-4-32k-0613", "gpt-4-0613", "gpt-3.5-turbo-0613"
             # step_description = LLMMethods.sample_next_step_from_summary(improved_request, progress_summary, model="gpt-3.5-turbo")
-            action_description = LLMMethods.sample_next_action_from_summary(improved_request, progress_summary,
-                                                                            model="gpt-4")
+            # todo: always keep last step in summary
+            action_description = LLMMethods.sample_next_action_from_summary(
+                improved_request, progress_summary, model="gpt-4")
             self.main_logger.info(action_description)
 
             output_step = f"Step {i}:"
