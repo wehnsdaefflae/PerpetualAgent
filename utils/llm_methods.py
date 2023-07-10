@@ -11,7 +11,7 @@ from hyperdb import hyper_SVM_ranking_algorithm_sort
 from utils import openai_function_schemata
 from utils.basic_llm_calls import openai_chat, get_embeddings
 from utils.logging_handler import logging_handlers
-from utils.misc import extract_docstring
+from utils.misc import extract_docstring, extract_code_blocks
 from utils.prompts import DOCSTRING_WRITER, REQUEST_IMPROVER
 from utils.toolbox import ToolBox
 
@@ -92,7 +92,28 @@ class LLMMethods(ABC):
         return response.strip()
 
     @staticmethod
-    def extract_arguments(full_description: str, tool_schema: dict[str, any], model="gpt-3.5-turbo-0613", **parameters: any) -> dict[str, any]:
+    def extract_arguments(full_description: str, tool_schema: dict[str, any], **parameters: any) -> dict[str, any]:
+        json_schema = json.dumps(tool_schema, indent=2, sort_keys=True)
+        prompt = (
+            f"## Instructions\n"
+            f"Read the provided text and identify relevant information that fits within the categories specified by the JSON schema below. Use this data to create a "
+            f"JSON object in a JSON code block and in compliance with the schema. Pay careful attention to the required data types, structure, and descriptions.\n"
+            f"\n"
+            f"## JSON Schema\n"
+            f"{json_schema}\n"
+            f"\n"
+            f"## Text\n"
+            f"{full_description.strip()}\n"
+            f"\n"
+        )
+
+        response = LLMMethods.respond(prompt, list(), function_id="extract_arguments", **parameters)
+        code_block = extract_code_blocks(response)[0]
+        arguments = json.loads(code_block)
+        return arguments
+
+    @staticmethod
+    def _extract_arguments(full_description: str, tool_schema: dict[str, any], model="gpt-3.5-turbo-0613", **parameters: any) -> dict[str, any]:
         response = openai_chat(
             f"extracting with `{tool_schema['name']}`",
             model=model,
@@ -192,7 +213,7 @@ class LLMMethods(ABC):
         return response.strip()
 
     @staticmethod
-    def sample_next_action(progress_report: str, **parameters: any) -> str:
+    def sample_next_action(progress_report: str, finalize_message: str, **parameters: any) -> str:
         prompt = (f"{progress_report.strip()}\n"
                   f"===\n"
                   f"\n"
@@ -203,8 +224,7 @@ class LLMMethods(ABC):
                   # "If the previous action has failed according to the progress report, do not instruct the exact same action again but instead retry variants "
                   # "once or twice. If variants of the action fail as well, try a whole different approach instead.\n"
                   # "\n"
-                  f"If the request is fulfilled according to the progress report, respond only with \"This function finalizes a given request by applying the specific "
-                  f"operation.\".")  # todo: whatever the finalize function says
+                  f"If the request is fulfilled according to the progress report, respond only with \"{finalize_message.strip()}\".")  # todo: whatever the finalize function says
         response = LLMMethods.respond(prompt, list(), function_id="sample_next_step_summary", **parameters)
         return response.strip()
 
@@ -230,8 +250,8 @@ class LLMMethods(ABC):
         return tool_name.strip()
 
     @staticmethod
-    def make_function_docstring(task: str, **parameters: any) -> str:
-        prompt = DOCSTRING_WRITER.format(task=task)
+    def make_function_docstring(action: str, **parameters: any) -> str:
+        prompt = DOCSTRING_WRITER.format(action=action)
         response = LLMMethods.respond(prompt, list(), function_id="make_function_docstring", **parameters)
         docstring = extract_docstring(response)
         return docstring.strip()

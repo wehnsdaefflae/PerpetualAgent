@@ -109,7 +109,7 @@ class StepProcessor:
 
             tmp_tool = self.toolbox.get_temp_tool_from_code(new_tool_code)
             tool_schema = self.toolbox.get_schema_from_code(new_tool_code)
-            arguments = LLMMethods.extract_arguments(action_description, tool_schema)
+            arguments = LLMMethods.extract_arguments(action_description, tool_schema, model="gpt-3.5-turbo")
             tool_result = self._apply_tool(tmp_tool, arguments, True)
             if tool_result.succeeded:
                 self.toolbox.save_tool_code(new_tool_code, False)
@@ -127,7 +127,8 @@ class StepProcessor:
         return result
 
     def perform(self, action: str) -> tuple[str, bool]:
-        docstring = LLMMethods.make_function_docstring(action, model="gpt-4")
+        # docstring = LLMMethods.make_function_docstring(action, model="gpt-4")
+        docstring = LLMMethods.make_function_docstring(action, model="gpt-3.5-turbo")
         tool_description = self.toolbox.get_description_from_docstring(docstring)
 
         tool_name = LLMMethods.select_tool_name(self.toolbox, tool_description)
@@ -139,7 +140,7 @@ class StepProcessor:
             print(f"{colorama.Fore.RED}Tool: ", end="")
             tool = self.toolbox.get_tool_from_name(tool_name)
             tool_schema = self.toolbox.get_schema_from_name(tool_name)
-            arguments = LLMMethods.extract_arguments(action, tool_schema)
+            arguments = LLMMethods.extract_arguments(action, tool_schema, model="gpt-3.5-turbo")
             tool_result = self._apply_tool(tool, arguments, False)
 
         step_result = self._condense_result(tool_result.result, action)
@@ -175,7 +176,8 @@ class PerpetualAgent:
 
             if i < 2:
                 print(f"{colorama.Fore.CYAN}First step.")
-                action = LLMMethods.sample_first_action(improved_request, model="gpt-4")
+                # action = LLMMethods.sample_first_action(improved_request, model="gpt-4")
+                action = LLMMethods.sample_first_action(improved_request, model="gpt-3.5-turbo")
 
             else:
 
@@ -186,7 +188,9 @@ class PerpetualAgent:
                     action=last_action.strip(),
                     result=last_result.strip(),
                 )
-                action = LLMMethods.sample_next_action(summary, model="gpt-4")
+                finalize_message = self.toolbox.get_finalize_message()
+                # action = LLMMethods.sample_next_action(summary, finalize_message, model="gpt-4")
+                action = LLMMethods.sample_next_action(summary, finalize_message, model="gpt-3.5-turbo")
 
             self.main_logger.info(action)
             print(f"{colorama.Fore.YELLOW}Action: {action.strip()}")
@@ -214,7 +218,8 @@ class PerpetualAgent:
                     action=action.strip(),
                     result=result.strip())
 
-            current_progress = LLMMethods.respond(update_progress_prompt, list(), function_id="summarize", model="gpt-4")
+            # current_progress = LLMMethods.respond(update_progress_prompt, list(), function_id="summarize", model="gpt-4")
+            current_progress = LLMMethods.respond(update_progress_prompt, list(), function_id="summarize", model="gpt-3.5-turbo")
 
             self.main_logger.info(current_progress)
 
