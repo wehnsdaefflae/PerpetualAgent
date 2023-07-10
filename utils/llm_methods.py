@@ -83,9 +83,10 @@ class LLMMethods(ABC):
         nearest_neighbors = [db.documents[i] for i in nearest_neighbor_indices]
         concatenated = "\n\n".join(nearest_neighbors)
 
-        prompt = (f"{concatenated}\n"
-                  f"===\n"
+        prompt = (f"## Segments\n"
+                  f"{concatenated}\n"
                   f"\n"
+                  f"## Instruction\n"
                   f"Summarize the text segments above into one concise and coherent paragraph.")
 
         response = LLMMethods.respond(prompt, list(), function_id="summarize", **parameters)
@@ -97,15 +98,14 @@ class LLMMethods(ABC):
         prompt = (
             f"## Instructions\n"
             f"Read the provided text and identify relevant information that fits within the categories specified by the JSON schema below. Use this data to create a "
-            f"JSON object in a JSON code block and in compliance with the schema. Pay careful attention to the required data types, structure, and descriptions.\n"
+            f"JSON code block starting with \"```json\" and ending in \"```\" that contains a JSON object in compliance with the schema. Pay careful attention to the "
+            f"required data types, structure, and descriptions.\n"
             f"\n"
             f"## JSON Schema\n"
             f"{json_schema}\n"
             f"\n"
             f"## Text\n"
-            f"{full_description.strip()}\n"
-            f"\n"
-        )
+            f"{full_description.strip()}")
 
         response = LLMMethods.respond(prompt, list(), function_id="extract_arguments", **parameters)
         code_block = extract_code_blocks(response)[0]
@@ -201,30 +201,33 @@ class LLMMethods(ABC):
 
     @staticmethod
     def sample_first_action(request: str, **parameters: any) -> str:
-        prompt = (f"## Request\n"
-                  f"{request.strip()}\n"
-                  f"===\n"
-                  f"\n"
-                  f"Think step-by-step: What would be a computer's first action in order to fulfill the request above? Provide a one-sentence command in "
-                  f"natural language for a single simple action towards fulfilling the request at hand. Include all literal information required to perform that "
-                  f"action.")
+        prompt = (
+            f"## Request\n"
+            f"{request.strip()}\n"
+            f"\n"
+            f"## Instructions\n"
+            f"Think step-by-step: What would be a computer's first action in order to fulfill the request above? Provide a one-sentence command in "
+            f"natural language for a single simple action towards fulfilling the request at hand. Include all literal information required to perform that action.")
 
         response = LLMMethods.respond(prompt, list(), function_id="sample_first_step", **parameters)
         return response.strip()
 
     @staticmethod
-    def sample_next_action(progress_report: str, finalize_message: str, **parameters: any) -> str:
-        prompt = (f"{progress_report.strip()}\n"
-                  f"===\n"
-                  f"\n"
-                  f"Think step-by-step: Given the progress report, what conclusions do you draw regarding the request above? What would be a computer's "
-                  f"next action in order to fulfill the request? Provide a one-sentence command in natural language for a single simple action towards fulfilling "
-                  f"the request at hand. Include all literal information required to perform that action.\n"
-                  f"\n"
-                  # "If the previous action has failed according to the progress report, do not instruct the exact same action again but instead retry variants "
-                  # "once or twice. If variants of the action fail as well, try a whole different approach instead.\n"
-                  # "\n"
-                  f"If the request is fulfilled according to the progress report, respond only with \"{finalize_message.strip()}\".")  # todo: whatever the finalize function says
+    def sample_next_action(progress_report: str, **parameters: any) -> str:
+        prompt = (
+            f"<! -- PROGRESS REPORT -->\n"
+            f"{progress_report.strip()}\n"
+            f"<! -- END PROGRESS REPORT -->\n"
+            f"\n"
+            f"# Instructions\n"
+            f"Think step-by-step: Given the progress report above, what conclusions do you draw regarding the request? What would be a computer's next action in order "
+            f"to fulfill the request? Provide a one-sentence command in natural language for a single simple action towards fulfilling the request at hand. Include all "
+            f"literal information required to perform that action.\n"
+            f"\n"
+            # "If the previous action has failed according to the progress report, do not instruct the exact same action again but instead retry variants "
+            # "once or twice. If variants of the action fail as well, try a whole different approach instead.\n"
+            # "\n"
+            f"If the request is fulfilled according to the progress report, respond only with \"[FINALIZE]\".")
         response = LLMMethods.respond(prompt, list(), function_id="sample_next_step_summary", **parameters)
         return response.strip()
 

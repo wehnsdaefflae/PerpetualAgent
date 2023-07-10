@@ -28,14 +28,14 @@ PROGRESS_UPDATER = (
     f"<! -- EXAMPLE -->\n"
     f"{_EXAMPLE}\n"
     f"\n"
-    f"## Updated progress\n"
+    f"## Updated progress report\n"
     f"After finding a suitable time for the user, the project team members were invited for the next Tuesday at 10 am "
     f"and everyone accepted the invitation for lunch.\n"
     f"<! -- END OF EXAMPLE -->\n"
     f"\n"
     f"{PROGRESS_REPORT}\n"
     f"\n"
-    f"## Updated progress"
+    f"## Updated progress report"
 )
 
 STEP_SUMMARIZER = (

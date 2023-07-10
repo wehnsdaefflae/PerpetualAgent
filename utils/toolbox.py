@@ -26,10 +26,6 @@ class ToolBox:
         self.database_path = database_path
         self.vector_db = self._initialize_database(database_path)
 
-    def get_finalize_message(self) -> str:
-        description = self.get_docstring_description_from_name("finalize")
-        return description
-
     def _initialize_database(self, database_path: str) -> hyperdb.HyperDB():
         db = hyperdb.HyperDB()
         tool_names = sorted(self.get_all_tools())

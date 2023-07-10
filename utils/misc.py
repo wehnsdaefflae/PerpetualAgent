@@ -40,13 +40,17 @@ def extract_docstring(text: str) -> str:
     """
 
     # The pattern for triple quoted strings.
-    pattern = r'\"\"\"(.*?)\"\"\"'
+    double_quote_pattern = r'\"\"\"(.*?)\"\"\"'
+    single_quote_pattern = r"\'\'\'(.*?)\'\'\'"
+    all_quote_pattern = f"{double_quote_pattern}|{single_quote_pattern}"
 
     # Find all the matches for the pattern and flatten the result.
-    matches = re.findall(pattern, text, re.DOTALL)
-    for each_match in matches:
-        if len(each_match) >= 1:
-            return each_match
+    matches = re.findall(all_quote_pattern, text, re.DOTALL)
+    for double_quoted, single_quoted in matches:
+        if double_quoted:
+            return double_quoted
+        if single_quoted:
+            return single_quoted
 
     raise DocstringException()
 

@@ -26,7 +26,6 @@ class ToolApplicationException(Exception):
 @dataclasses.dataclass
 class ToolResult:
     result: str
-    is_finalized: bool
     succeeded: bool
 
 
@@ -73,7 +72,7 @@ class StepProcessor:
 
         if not self._confirmation(tool_name, arguments):
             del tool
-            return ToolResult("User rejected tool.", False, True)
+            return ToolResult("User rejected tool.", True)
 
         try:
             result = tool(**arguments)
@@ -84,14 +83,14 @@ class StepProcessor:
             if is_temp_tool:
                 trace = format_exc()
                 self.logger.error(trace)
-                return ToolResult(trace, False, False)
+                return ToolResult(trace, False)
 
         finally:
             del tool
 
-        return ToolResult(str(result), tool_name == "finalize", True)
+        return ToolResult(str(result), True)
 
-    def _apply_new_tool(self, action_description: str, docstring: str) -> ToolResult:
+    def _apply_new_tool(self, action_description: str, docstring: str) -> str:
         tool_descriptions_string = self.toolbox.get_all_descriptions_string()
         code_prompt = CODER.format(tool_descriptions=tool_descriptions_string, docstring=docstring)
         message_history = [
@@ -105,7 +104,7 @@ class StepProcessor:
             except ToolCreationException as e:
                 self.logger.error(e)
                 print(f"{colorama.Style.RESET_ALL}", end="")
-                return ToolResult(f"Tool creation failed. {e}", False, False)
+                return f"Tool creation failed. {e}"
 
             tmp_tool = self.toolbox.get_temp_tool_from_code(new_tool_code)
             tool_schema = self.toolbox.get_schema_from_code(new_tool_code)
@@ -113,20 +112,20 @@ class StepProcessor:
             tool_result = self._apply_tool(tmp_tool, arguments, True)
             if tool_result.succeeded:
                 self.toolbox.save_tool_code(new_tool_code, False)
-                return tool_result
+                return tool_result.result
 
             message_history.append(
                 {"role": "user", "content": tool_result.result}
             )
 
-        return ToolResult(f"Tool application failed permanently after {self.implementation_attempts} attempts.", False, False)
+        return f"Tool application failed permanently after {self.implementation_attempts} attempts."
 
     def _condense_result(self, result: str, request: str) -> str:
         if len(result) > self.result_limit:
             result = LLMMethods.vector_summarize(request, result, model="gpt-3.5-turbo")
         return result
 
-    def perform(self, action: str) -> tuple[str, bool]:
+    def perform(self, action: str) -> str:
         # docstring = LLMMethods.make_function_docstring(action, model="gpt-4")
         docstring = LLMMethods.make_function_docstring(action, model="gpt-3.5-turbo")
         tool_description = self.toolbox.get_description_from_docstring(docstring)
@@ -141,10 +140,11 @@ class StepProcessor:
             tool = self.toolbox.get_tool_from_name(tool_name)
             tool_schema = self.toolbox.get_schema_from_name(tool_name)
             arguments = LLMMethods.extract_arguments(action, tool_schema, model="gpt-3.5-turbo")
-            tool_result = self._apply_tool(tool, arguments, False)
+            tool_output = self._apply_tool(tool, arguments, False)
+            tool_result = tool_output.result
 
-        step_result = self._condense_result(tool_result.result, action)
-        return step_result, tool_result.is_finalized
+        step_result = self._condense_result(tool_result, action)
+        return step_result
 
 
 class PerpetualAgent:
@@ -165,7 +165,9 @@ class PerpetualAgent:
         summary_length_limit = 5_000
 
         i = 1
-        current_progress = "[no steps performed yet]"
+        summary = "Request already fulfilled."
+        progress = "[no steps performed yet]"
+        last_progress = ""
         last_action = ""
         last_result = ""
         while True:
@@ -181,29 +183,27 @@ class PerpetualAgent:
 
             else:
 
-                print(f"{colorama.Fore.CYAN}Progress: {current_progress.strip()}")
+                print(f"{colorama.Fore.CYAN}Progress: {progress.strip()}")
                 summary = PROGRESS_REPORT.format(
                     request=improved_request.strip(),
-                    progress=current_progress.strip(),
+                    progress=last_progress.strip(),
                     action=last_action.strip(),
                     result=last_result.strip(),
                 )
-                finalize_message = self.toolbox.get_finalize_message()
                 # action = LLMMethods.sample_next_action(summary, finalize_message, model="gpt-4")
-                action = LLMMethods.sample_next_action(summary, finalize_message, model="gpt-3.5-turbo")
+                action = LLMMethods.sample_next_action(summary, model="gpt-3.5-turbo")
 
             self.main_logger.info(action)
             print(f"{colorama.Fore.YELLOW}Action: {action.strip()}")
 
-            result, is_finalized = self.processor.perform(action)  # literal action description
+            if "[finalize]" in action.lower():
+                self.main_logger.info(f"Request fulfilled: {progress}")
+                return progress
+
+            result = self.processor.perform(action)  # literal action description
             print(f"{colorama.Fore.BLUE}Result: {truncate(result, 200)}{colorama.Style.RESET_ALL}\n")
 
             print("====================================\n")
-
-            if is_finalized:
-                self.main_logger.info("Request fulfilled.")
-                print("Request fulfilled.")
-                return result
 
             if i < 2:
                 update_progress_prompt = STEP_SUMMARIZER.format(
@@ -214,14 +214,14 @@ class PerpetualAgent:
             else:
                 update_progress_prompt = PROGRESS_UPDATER.format(
                     request=improved_request.strip(),
-                    progress=current_progress.strip(),
+                    progress=progress.strip(),
                     action=action.strip(),
                     result=result.strip())
 
-            # current_progress = LLMMethods.respond(update_progress_prompt, list(), function_id="summarize", model="gpt-4")
-            current_progress = LLMMethods.respond(update_progress_prompt, list(), function_id="summarize", model="gpt-3.5-turbo")
+            last_progress = progress
 
-            self.main_logger.info(current_progress)
+            progress = LLMMethods.respond(update_progress_prompt, list(), function_id="summarize", model="gpt-3.5-turbo")
+            self.main_logger.info(progress)
 
             last_action = action
             last_result = result
