@@ -203,7 +203,8 @@ class LLMMethods(ABC):
                   # "If the previous action has failed according to the progress report, do not instruct the exact same action again but instead retry variants "
                   # "once or twice. If variants of the action fail as well, try a whole different approach instead.\n"
                   # "\n"
-                  f"If the request is fulfilled according to the progress report, reply only with \"Finalize the request.\".")
+                  f"If the request is fulfilled according to the progress report, respond only with \"This function finalizes a given request by applying the specific "
+                  f"operation.\".")  # todo: whatever the finalize function says
         response = LLMMethods.respond(prompt, list(), function_id="sample_next_step_summary", **parameters)
         return response.strip()
 
