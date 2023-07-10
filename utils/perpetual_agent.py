@@ -103,7 +103,7 @@ class StepProcessor:
 
             except ToolCreationException as e:
                 self.logger.error(e)
-                print(f"{colorama.Style.RESET_ALL}", end="")
+                print(colorama.Style.RESET_ALL)
                 return f"Tool creation failed. {e}"
 
             tmp_tool = self.toolbox.get_temp_tool_from_code(new_tool_code)
@@ -126,13 +126,13 @@ class StepProcessor:
         return result
 
     def perform(self, action: str) -> str:
-        # docstring = LLMMethods.make_function_docstring(action, model="gpt-4")
-        docstring = LLMMethods.make_function_docstring(action, model="gpt-3.5-turbo")
+        docstring = LLMMethods.make_function_docstring(action, model="gpt-4")
+        # docstring = LLMMethods.make_function_docstring(action, model="gpt-3.5-turbo")
         tool_description = self.toolbox.get_description_from_docstring(docstring)
 
         tool_name = LLMMethods.select_tool_name(self.toolbox, tool_description)
         if tool_name is None:
-            print(f"{colorama.Fore.RED}{colorama.Back.YELLOW}{colorama.Style.BRIGHT}New tool: ", end="")
+            print(f"{colorama.Fore.BLACK}{colorama.Back.RED}{colorama.Style.BRIGHT}New tool: ", end="")
             tool_result = self._apply_new_tool(action, docstring)
 
         else:
@@ -190,14 +190,15 @@ class PerpetualAgent:
                     action=last_action.strip(),
                     result=last_result.strip(),
                 )
-                # action = LLMMethods.sample_next_action(summary, finalize_message, model="gpt-4")
-                action = LLMMethods.sample_next_action(summary, model="gpt-3.5-turbo")
+                action = LLMMethods.sample_next_action(summary, model="gpt-4")
+                # action = LLMMethods.sample_next_action(summary, model="gpt-3.5-turbo")
 
             self.main_logger.info(action)
             print(f"{colorama.Fore.YELLOW}Action: {action.strip()}")
 
             if "[finalize]" in action.lower():
                 self.main_logger.info(f"Request fulfilled: {progress}")
+                print(colorama.Style.RESET_ALL)
                 return progress
 
             result = self.processor.perform(action)  # literal action description
