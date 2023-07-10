@@ -90,7 +90,7 @@ class StepProcessor:
 
         return ToolResult(str(result), True)
 
-    def _apply_new_tool(self, action_description: str, docstring: str) -> str:
+    def _apply_new_tool(self, text: str, docstring: str) -> str:
         tool_descriptions_string = self.toolbox.get_all_descriptions_string()
         code_prompt = CODER.format(tool_descriptions=tool_descriptions_string, docstring=docstring)
         message_history = [
@@ -108,7 +108,7 @@ class StepProcessor:
 
             tmp_tool = self.toolbox.get_temp_tool_from_code(new_tool_code)
             tool_schema = self.toolbox.get_schema_from_code(new_tool_code)
-            arguments = LLMMethods.extract_arguments(action_description, tool_schema, model="gpt-3.5-turbo")
+            arguments = LLMMethods.extract_arguments(text, tool_schema, model="gpt-3.5-turbo")
             tool_result = self._apply_tool(tmp_tool, arguments, True)
             if tool_result.succeeded:
                 self.toolbox.save_tool_code(new_tool_code, False)
@@ -125,21 +125,21 @@ class StepProcessor:
             result = LLMMethods.vector_summarize(request, result, model="gpt-3.5-turbo")
         return result
 
-    def perform(self, action: str) -> str:
-        docstring = LLMMethods.make_function_docstring(action, model="gpt-4")
-        # docstring = LLMMethods.make_function_docstring(action, model="gpt-3.5-turbo")
+    def perform(self, action: str, progress_report: str) -> str:
+        # docstring = LLMMethods.make_function_docstring(action, model="gpt-4")
+        docstring = LLMMethods.make_function_docstring(action, model="gpt-3.5-turbo")
         tool_description = self.toolbox.get_description_from_docstring(docstring)
 
         tool_name = LLMMethods.select_tool_name(self.toolbox, tool_description)
         if tool_name is None:
             print(f"{colorama.Fore.BLACK}{colorama.Back.RED}{colorama.Style.BRIGHT}New tool: ", end="")
-            tool_result = self._apply_new_tool(action, docstring)
+            tool_result = self._apply_new_tool(progress_report, docstring)
 
         else:
             print(f"{colorama.Fore.RED}Tool: ", end="")
             tool = self.toolbox.get_tool_from_name(tool_name)
             tool_schema = self.toolbox.get_schema_from_name(tool_name)
-            arguments = LLMMethods.extract_arguments(action, tool_schema, model="gpt-3.5-turbo")
+            arguments = LLMMethods.extract_arguments(progress_report, tool_schema, model="gpt-3.5-turbo")
             tool_output = self._apply_tool(tool, arguments, False)
             tool_result = tool_output.result
 
@@ -201,7 +201,7 @@ class PerpetualAgent:
                 print(colorama.Style.RESET_ALL)
                 return progress
 
-            result = self.processor.perform(action)  # literal action description
+            result = self.processor.perform(action, summary)  # literal action description
             print(f"{colorama.Fore.BLUE}Result: {truncate(result, 200)}{colorama.Style.RESET_ALL}\n")
 
             print("====================================\n")

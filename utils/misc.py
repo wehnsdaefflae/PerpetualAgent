@@ -1,5 +1,6 @@
 # coding=utf-8
 import ast
+import dataclasses
 import re
 
 import logging
@@ -121,3 +122,63 @@ def insert_docstring(func_code: str, docstring: str) -> str:
 
     # If no function was found, return the original code
     return func_code
+
+
+@dataclasses.dataclass
+class Arg:
+    name: str
+    type: str
+    description: str
+
+
+@dataclasses.dataclass
+class Kwarg(Arg):
+    default: str
+
+
+@dataclasses.dataclass
+class DocstringData:
+    name: str
+    summary: str
+    description: str
+    args: list[Arg]
+    kwargs: list[Kwarg]
+    example_parameters: dict[str, any]
+    return_type: str
+    return_description: str
+
+
+def compose_docstring(docstring_data: DocstringData) -> str:
+    args_str = "\n".join(f"    {arg.name} ({arg.type}): {arg.description}\n" for arg in docstring_data.args)
+    kwarg_lines = list()
+    for each_kwarg in docstring_data.kwargs:
+        if each_kwarg.default is None:
+            kwarg_lines.append(
+                f"    {each_kwarg.name} ({each_kwarg.type}, optional): {each_kwarg.description}"
+            )
+        else:
+            kwarg_lines.append(
+                f"    {each_kwarg.name} ({each_kwarg.type}): {each_kwarg.description}. Defaults to {each_kwarg.default!r}."
+            )
+    args_str += "\n".join(kwarg_lines)
+
+    example_args = ", ".join(
+        [f"{value!r}" for key, value in docstring_data.example_parameters.items() if key in docstring_data.args and key not in docstring_data.kwargs] +
+        [f"{key}={value!r}" for key, value in docstring_data.example_parameters.items() if key in docstring_data.kwargs and key not in docstring_data.args]
+    )
+
+    return (
+        f"\"\"\"{docstring_data.summary}\n"
+        f"\n"
+        f"{docstring_data.description}\n"
+        f"\n"
+        f"Args:\n"
+        f"{args_str}\n"
+        f"\n"
+        f"Example:\n"
+        f"    >>> {docstring_data.name}({example_args})\n"
+        f"\n"
+        f"Returns:\n"
+        f"    {docstring_data.return_type}: {docstring_data.return_description}\n"
+        f"\"\"\""
+    )

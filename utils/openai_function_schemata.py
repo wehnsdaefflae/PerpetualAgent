@@ -83,3 +83,88 @@ get_intermediate_results = {
         "required": ["request"]
     }
 }
+
+docstring_schema = {
+    "name": "make_docstring",
+    "description": "Generates a Google style docstring for a given function.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "description": "The name of the function.",
+                "type": "string"
+            },
+            "summary": {
+                "description": "A one sentence summary of the function.",
+                "type": "string"
+            },
+            "description": {
+                "description": "A brief explanation of the function. It should be a clear, concise overview of what the function does.",
+                "type": "string"
+            },
+            "args": {
+                "description": "A list of dictionaries describing the function's positional arguments.",
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "description": "The name of the argument.",
+                            "type": "string"
+                        },
+                        "type": {
+                            "description": "The type of the argument.",
+                            "type": "string"
+                        },
+                        "description": {
+                            "description": "A description of the argument.",
+                            "type": "string"
+                        },
+                    },
+                    "required": ["name", "type", "description"]
+                }
+            },
+            "kwargs": {
+                "description": "A list of dictionaries describing the function's keyword arguments.",
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "description": "The name of the argument.",
+                            "type": "string"
+                        },
+                        "type": {
+                            "description": "The type of the argument.",
+                            "type": "string"
+                        },
+                        "description": {
+                            "description": "A description of the argument.",
+                            "type": "string"
+                        },
+                        "default_value": {
+                            "description": "The default value of the argument. 'None' if optional.",
+                            "type": "string"
+                        },
+                    },
+                    "required": ["name", "type", "description", "default_value"]
+                },
+            },
+            "example_parameters": {
+                "description": "An dictionary with example values for each argument. The keys should be the same as the argument names and the values should be the "
+                               "example values.",
+                "type": "object",
+                "additionalProperties": True,
+            },
+            "return_type": {
+                "description": "The type of the return value.",
+                "type": "string"
+            },
+            "return_description": {
+                "description": "A description of the return value.",
+                "type": "string"
+            }
+        },
+        "required": ["name", "summary", "description", "args", "example_parameters", "return_type", "return_description"]
+    }
+}

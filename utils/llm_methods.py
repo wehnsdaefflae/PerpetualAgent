@@ -11,7 +11,8 @@ from hyperdb import hyper_SVM_ranking_algorithm_sort
 from utils import openai_function_schemata
 from utils.basic_llm_calls import openai_chat, get_embeddings
 from utils.logging_handler import logging_handlers
-from utils.misc import extract_docstring, extract_code_blocks
+from utils.misc import extract_docstring, extract_code_blocks, Arg, Kwarg, DocstringData, compose_docstring
+from utils.openai_function_schemata import docstring_schema
 from utils.prompts import DOCSTRING_WRITER, REQUEST_IMPROVER
 from utils.toolbox import ToolBox
 
@@ -93,19 +94,31 @@ class LLMMethods(ABC):
         return response.strip()
 
     @staticmethod
-    def extract_arguments(full_description: str, tool_schema: dict[str, any], **parameters: any) -> dict[str, any]:
+    def extract_arguments(text: str, tool_schema: dict[str, any], be_creative: bool = False, **parameters: any) -> dict[str, any]:
         json_schema = json.dumps(tool_schema, indent=2, sort_keys=True)
-        prompt = (
-            f"## Instructions\n"
-            f"Read the provided text and identify relevant information that fits within the categories specified by the JSON schema below. Use this data to create a "
-            f"JSON code block starting with \"```json\" and ending in \"```\" that contains a JSON object in compliance with the schema. Pay careful attention to the "
-            f"required data types, structure, and descriptions.\n"
+        if be_creative:
+            prompt = (
+                f"## Instructions\n"
+                f"Create a JSON code block starting with \"```json\" and ending in \"```\" that contains a JSON object in compliance with the schema below. Take "
+                f"creative liberties to infer all the required information in the spirit of the provided text. Pay careful attention to the required data types, "
+                f"structure, and descriptions.\n"
+            )
+
+        else:
+            prompt = (
+                f"## Instructions\n"
+                f"Read the provided text and identify relevant information that fits within the categories specified by the JSON schema below. Use this data to create a "
+                f"JSON code block starting with \"```json\" and ending in \"```\" that contains a JSON object in compliance with the schema. Pay careful attention to "
+                f"the required data types, structure, and descriptions.\n")
+
+        prompt += (
             f"\n"
             f"## JSON Schema\n"
             f"{json_schema}\n"
             f"\n"
-            f"## Text\n"
-            f"{full_description.strip()}")
+            f"<!-- BEGIN TEXT -->\n"
+            f"{text.strip()}\n"
+            f"<!-- END TEXT -->")
 
         response = LLMMethods.respond(prompt, list(), function_id="extract_arguments", **parameters)
         code_block = extract_code_blocks(response)[0]
@@ -207,7 +220,7 @@ class LLMMethods(ABC):
             f"\n"
             f"## Instructions\n"
             f"Think step-by-step: What would be a computer's first action in order to fulfill the request above? Provide a one-sentence command in "
-            f"natural language for a single simple action towards fulfilling the request at hand. Include all literal information required to perform that action.")
+            f"natural language for a single simple action towards fulfilling the request at hand.")
 
         response = LLMMethods.respond(prompt, list(), function_id="sample_first_step", **parameters)
         return response.strip()
@@ -215,14 +228,13 @@ class LLMMethods(ABC):
     @staticmethod
     def sample_next_action(progress_report: str, **parameters: any) -> str:
         prompt = (
-            f"<! -- PROGRESS REPORT -->\n"
+            f"<! -- BEGIN PROGRESS REPORT -->\n"
             f"{progress_report.strip()}\n"
             f"<! -- END PROGRESS REPORT -->\n"
             f"\n"
             f"# Instructions\n"
             f"Think step-by-step: Given the progress report above, what conclusions do you draw regarding the request? What would be a computer's next action in order "
-            f"to fulfill the request? Provide a one-sentence command in natural language for a single simple action towards fulfilling the request at hand. Include all "
-            f"literal information required to perform that action.\n"
+            f"to fulfill the request? Provide a one-sentence command in natural language for a single simple action towards fulfilling the request at hand.\n"
             # "If the previous action has failed according to the progress report, do not instruct the exact same action again but instead retry variants "
             # "once or twice. If variants of the action fail as well, try a whole different approach instead.\n"
             # "\n"
@@ -257,3 +269,12 @@ class LLMMethods(ABC):
         response = LLMMethods.respond(prompt, list(), function_id="make_function_docstring", **parameters)
         docstring = extract_docstring(response)
         return docstring.strip()
+
+    @staticmethod
+    def _make_function_docstring(action: str, **parameters: any) -> str:
+        docstring_dict = LLMMethods.extract_arguments(action, docstring_schema, **parameters)
+        args = [Arg(**each_dict) for each_dict in docstring_dict.pop("args")]
+        kwargs = [Kwarg(**each_dict) for each_dict in docstring_dict.pop("kwargs")]
+        docstring_data = DocstringData(args=args, kwargs=kwargs, **docstring_dict)
+        docstring_str = compose_docstring(docstring_data)
+        return docstring_str
