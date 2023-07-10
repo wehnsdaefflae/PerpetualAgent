@@ -30,7 +30,7 @@ class ToolBox:
         db = hyperdb.HyperDB()
         tool_names = sorted(self.get_all_tools())
 
-        if False and os.path.isfile(database_path):
+        if os.path.isfile(database_path):
             db.load(database_path)
 
             tool_names_from_db = sorted(db.documents)

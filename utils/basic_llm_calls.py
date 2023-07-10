@@ -36,7 +36,7 @@ def openai_chat(function_id: str, *args: any, **kwargs: any) -> OpenAIObject:
         input("Chat completion failed. Press enter to retry...")
 
 
-def get_embeddings(segments: list[str]) -> list[list[float]]:
+def _get_embeddings(segments: list[str]) -> list[list[float]]:
     # model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
     model = SentenceTransformer("ggrn/e5-small-v2")
     embedding_numpy = model.encode(segments, show_progress_bar=False)
@@ -44,7 +44,7 @@ def get_embeddings(segments: list[str]) -> list[list[float]]:
     return embedding
 
 
-def _get_embeddings(segments: list[str]) -> list[list[float]]:
+def get_embeddings(segments: list[str]) -> list[list[float]]:
     # todo: check this: https://www.youtube.com/watch?v=QdDoFfkVkcw
     model = "text-embedding-ada-002"  # max input tokens: 8191, dimensions: 1536
     # model = "text-similarity-davinci-001"

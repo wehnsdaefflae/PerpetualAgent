@@ -11,7 +11,7 @@ from hyperdb import hyper_SVM_ranking_algorithm_sort
 from utils import openai_function_schemata
 from utils.basic_llm_calls import openai_chat, get_embeddings
 from utils.logging_handler import logging_handlers
-from utils.misc import extract_docstring, format_steps
+from utils.misc import extract_docstring
 from utils.prompts import DOCSTRING_WRITER, REQUEST_IMPROVER
 from utils.toolbox import ToolBox
 
@@ -34,7 +34,7 @@ class LLMMethods(ABC):
     def improve_request(main_request: str, *parameters: any, **kwargs: any) -> str:
         prompt = REQUEST_IMPROVER.format(request=main_request)
         improved_request = LLMMethods.respond(prompt, list(), *parameters, **kwargs)
-        return improved_request
+        return improved_request.strip()
 
     @staticmethod
     def summarize(text: str, instruction: str = "Summarize the text above.", **parameters: any) -> str:
@@ -42,7 +42,7 @@ class LLMMethods(ABC):
                   f"==============\n"
                   f"{instruction}\n")
         summary = LLMMethods.respond(prompt, list(), function_id="summarize", **parameters)
-        return summary
+        return summary.strip()
 
     @staticmethod
     def vector_summarize(request: str, text: str, segment_size: int = 500, overlap: int = 100, nearest_neighbors: int = 5, **parameters: any) -> str:
@@ -85,20 +85,21 @@ class LLMMethods(ABC):
 
         prompt = (f"{concatenated}\n"
                   f"===\n"
-                  f"Given the text above, respond to the following request:\n"
-                  f"{request}")
+                  f"\n"
+                  f"Summarize the text segments above into one concise and coherent paragraph.")
 
         response = LLMMethods.respond(prompt, list(), function_id="summarize", **parameters)
-        return response
+        return response.strip()
 
     @staticmethod
-    def extract_arguments(full_description: str, tool_schema: dict[str, any], **parameters: any) -> dict[str, any]:
+    def extract_arguments(full_description: str, tool_schema: dict[str, any], model="gpt-3.5-turbo-0613", **parameters: any) -> dict[str, any]:
         response = openai_chat(
             f"extracting with `{tool_schema['name']}`",
-            **parameters,
+            model=model,
             messages=[{"role": "user", "content": full_description}],
             functions=[tool_schema],
-            function_call={"name": tool_schema["name"]}
+            function_call={"name": tool_schema["name"]},
+            **parameters,
         )
 
         each_choice, = response.choices
@@ -141,7 +142,7 @@ class LLMMethods(ABC):
 
         response_message = response.choices[0]["message"]
         content = response_message["content"]
-        return content
+        return content.strip()
 
     @staticmethod
     def respond(prompt: str, message_history: list[dict[str, str]], function_id: str = "respond", **parameters: any) -> str:
@@ -154,7 +155,7 @@ class LLMMethods(ABC):
 
         response_message = response.choices[0]["message"]
         content = response_message["content"]
-        return content
+        return content.strip()
 
     @staticmethod
     def naturalize(request: str, tool_schema: dict[str, any], arguments_json: str, result_json: str, **parameters: any) -> str:
@@ -175,57 +176,36 @@ class LLMMethods(ABC):
 
         response_message = response.choices[0]["message"]
         content = response_message["content"]
-        return content
+        return content.strip()
 
     @staticmethod
-    def sample_next_step(request: str, message_history: list[dict[str, str]], **parameters: any) -> str:
-        prompt = (f"Request: {request}\n"
+    def sample_first_action(request: str, **parameters: any) -> str:
+        prompt = (f"## Request\n"
+                  f"{request.strip()}\n"
                   f"===\n"
-                  f"\n")
+                  f"\n"
+                  f"Think step-by-step: What would be a computer's first action in order to fulfill the request above? Provide a one-sentence command in "
+                  f"natural language for a single simple action towards fulfilling the request at hand. Include all literal information required to perform that "
+                  f"action.")
 
-        if len(message_history) < 1:
-            prompt += (f"Think step-by-step: What would be a computer's first action in order to fulfill the request above? Provide a one-sentence command in "
-                       f"natural language for a single simple action towards implementing the request at hand.")
-
-        else:
-            prompt += "Previous steps:\n"
-            prompt += format_steps(message_history)
-            prompt += (f"Think step-by-step: What would be a computer's next action in order to fulfill the request and given the previous steps above? Provide a "
-                       f"one-sentence command in natural language for a single simple action towards implementing the request at hand. Finalize the response if the "
-                       f"previous steps indicate that the request is already fulfilled.\n"
-                       f"\n"
-                       "Only describe the action, not the whole step or the result. If the last action has failed, do not instruct the exact same action again but "
-                       "instead retry variants once or twice. If variants of the action fail as well, try a whole different approach instead.")
-
-        response = LLMMethods.respond(prompt, list(), function_id="sample_next_step", **parameters)
-        return response
+        response = LLMMethods.respond(prompt, list(), function_id="sample_first_step", **parameters)
+        return response.strip()
 
     @staticmethod
-    def sample_next_action_from_summary(request: str, history_summary: str, **parameters: any) -> str:
-        prompt = (f"Request:\n"
-                  f"{request}\n"
+    def sample_next_action(progress_report: str, **parameters: any) -> str:
+        prompt = (f"{progress_report.strip()}\n"
                   f"===\n"
-                  f"\n")
-
-        if 0 >= len(history_summary):
-            prompt += (f"Think step-by-step: What would be a computer's first action in order to fulfill the request above? Provide a one-sentence command in "
-                       f"natural language for a single simple action towards fulfilling the request at hand.")
-
-        else:
-            prompt += (f"Progress report:\n"
-                       f"{history_summary}\n"
-                       f"===\n"
-                       f"\n")
-            prompt += (f"Think step-by-step: Given the progress report, what conclusions do you draw regarding the request above? What would be a computer's "
-                       f"next action in order to fulfill the request? Provide a one-sentence command in natural language for a single simple action towards fulfilling "
-                       f"the request at hand.\n"
-                       f"\n"
-                       # "If the previous action has failed according to the progress report, do not instruct the exact same action again but instead retry variants "
-                       # "once or twice. If variants of the action fail as well, try a whole different approach instead.\n"
-                       # "\n"
-                       f"Finalize the response if the request is fulfilled according to the progress report.")
+                  f"\n"
+                  f"Think step-by-step: Given the progress report, what conclusions do you draw regarding the request above? What would be a computer's "
+                  f"next action in order to fulfill the request? Provide a one-sentence command in natural language for a single simple action towards fulfilling "
+                  f"the request at hand. Include all literal information required to perform that action.\n"
+                  f"\n"
+                  # "If the previous action has failed according to the progress report, do not instruct the exact same action again but instead retry variants "
+                  # "once or twice. If variants of the action fail as well, try a whole different approach instead.\n"
+                  # "\n"
+                  f"If the request is fulfilled according to the progress report, reply only with \"Finalize the request.\".")
         response = LLMMethods.respond(prompt, list(), function_id="sample_next_step_summary", **parameters)
-        return response
+        return response.strip()
 
     @staticmethod
     def select_tool_name(toolbox: ToolBox, function_description: str) -> str | None:
@@ -243,17 +223,14 @@ class LLMMethods(ABC):
         tool_name = toolbox.vector_db.documents[document_index]
         logger.info(f"Selected tool: {tool_name} with fitness {fitness:.2f}")
 
-        if fitness < .9:
+        if fitness < .7:
             return None
 
-        return tool_name
+        return tool_name.strip()
 
     @staticmethod
     def make_function_docstring(task: str, **parameters: any) -> str:
         prompt = DOCSTRING_WRITER.format(task=task)
-
-        history = list()
-
-        response = LLMMethods.respond(prompt, history, function_id="make_function_docstring", **parameters)
+        response = LLMMethods.respond(prompt, list(), function_id="make_function_docstring", **parameters)
         docstring = extract_docstring(response)
-        return docstring
+        return docstring.strip()
