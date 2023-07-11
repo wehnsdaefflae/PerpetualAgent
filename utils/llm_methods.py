@@ -126,7 +126,7 @@ class LLMMethods(ABC):
         return arguments
 
     @staticmethod
-    def _extract_arguments(full_description: str, tool_schema: dict[str, any], model="gpt-3.5-turbo-0613", **parameters: any) -> dict[str, any]:
+    def openai_extract_arguments(full_description: str, tool_schema: dict[str, any], model="gpt-3.5-turbo-0613", **parameters: any) -> dict[str, any]:
         response = openai_chat(
             f"extracting with `{tool_schema['name']}`",
             model=model,

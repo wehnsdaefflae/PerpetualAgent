@@ -151,10 +151,10 @@ docstring_schema = {
                 },
             },
             "example_parameters": {
-                "description": "An dictionary with example values for each argument. The keys should be the same as the argument names and the values should be the "
-                               "example values.",
+                "description": "A dictionary with example values for each argument. The keys should be the same as the argument names and the values should be the "
+                               "example values. The empty dictionary if the function does not take any positional arguments.",
                 "type": "object",
-                "additionalProperties": True,
+                # "additionalProperties": True,
             },
             "return_type": {
                 "description": "The type of the return value.",

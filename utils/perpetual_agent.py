@@ -8,6 +8,7 @@ import colorama
 
 from utils.basic_llm_calls import openai_chat
 from utils.llm_methods import LLMMethods
+from utils.openai_function_schemata import docstring_schema
 from utils.prompts import CODER, STEP_SUMMARIZER
 from utils.logging_handler import logging_handlers
 from utils.misc import truncate, extract_code_blocks
@@ -128,8 +129,17 @@ class StepProcessor:
     def perform(self, action: str, progress_report: str) -> str:
         # docstring = LLMMethods.make_function_docstring(action, model="gpt-4")
         docstring = LLMMethods.make_function_docstring(action, model="gpt-3.5-turbo")
+        """
+        full_info = (
+            f"{progress_report}\n"
+            f"\n"
+            f"## This step\n"
+            f"### Action\n"
+            f"{action}"
+        )
+        docstring = LLMMethods.openai_extract_arguments(full_info, docstring_schema)
+        """
         tool_description = self.toolbox.get_description_from_docstring(docstring)
-
         tool_name = LLMMethods.select_tool_name(self.toolbox, tool_description)
         if tool_name is None:
             print(f"{colorama.Fore.BLACK}{colorama.Back.RED}{colorama.Style.BRIGHT}New tool: ", end="")

@@ -44,7 +44,8 @@ class ToolBox:
                                 f"Reinitializing database.")
 
         self.logger.info(f"Initializing database with {len(tool_names)} tools")
-        descriptions = [self.get_docstring_from_name(each_name) for each_name in tool_names]
+        docstrings = [self.get_docstring_from_name(each_name) for each_name in tool_names]
+        descriptions = [self.get_description_from_docstring(each_docstring) for each_docstring in docstrings]
         embeddings = get_embeddings(descriptions)
         db.add_documents(tool_names, vectors=embeddings)
         db.save(database_path)
