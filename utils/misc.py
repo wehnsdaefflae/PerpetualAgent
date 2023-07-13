@@ -133,7 +133,7 @@ class Arg:
 
 @dataclasses.dataclass
 class Kwarg(Arg):
-    default: str
+    default_value: str
 
 
 @dataclasses.dataclass
@@ -152,13 +152,13 @@ def compose_docstring(docstring_data: DocstringData) -> str:
     args_str = "\n".join(f"    {arg.name} ({arg.type}): {arg.description}\n" for arg in docstring_data.args)
     kwarg_lines = list()
     for each_kwarg in docstring_data.kwargs:
-        if each_kwarg.default is None:
+        if each_kwarg.default_value is None:
             kwarg_lines.append(
                 f"    {each_kwarg.name} ({each_kwarg.type}, optional): {each_kwarg.description}"
             )
         else:
             kwarg_lines.append(
-                f"    {each_kwarg.name} ({each_kwarg.type}): {each_kwarg.description}. Defaults to {each_kwarg.default!r}."
+                f"    {each_kwarg.name} ({each_kwarg.type}): {each_kwarg.description}. Defaults to {each_kwarg.default_value!r}."
             )
     args_str += "\n".join(kwarg_lines)
 

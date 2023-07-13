@@ -103,7 +103,7 @@ docstring_schema = {
                 "type": "string"
             },
             "args": {
-                "description": "A list of dictionaries describing the function's positional arguments.",
+                "description": "A list of dictionaries describing the function's positional arguments. Empty if the function does not take any positional arguments.",
                 "type": "array",
                 "items": {
                     "type": "object",
@@ -125,7 +125,7 @@ docstring_schema = {
                 }
             },
             "kwargs": {
-                "description": "A list of dictionaries describing the function's keyword arguments.",
+                "description": "A list of dictionaries describing the function's keyword arguments. Empty if the function does not take any keyword arguments.",
                 "type": "array",
                 "items": {
                     "type": "object",
@@ -151,17 +151,17 @@ docstring_schema = {
                 },
             },
             "example_parameters": {
-                "description": "A dictionary with example values for each argument. The keys should be the same as the argument names and the values should be the "
-                               "example values. The empty dictionary if the function does not take any positional arguments.",
+                "description": "A dictionary with an example value for each individual argument. The keys should be the same as the argument names "
+                               "and the values should be the example values. The empty dictionary if the function does not take any arguments.",
                 "type": "object",
-                # "additionalProperties": True,
+                "additionalProperties": True,
             },
             "return_type": {
-                "description": "The type of the return value.",
+                "description": "The type of the return value. 'None' if the function does not return anything.",
                 "type": "string"
             },
             "return_description": {
-                "description": "A description of the return value.",
+                "description": "A description of the return value. If the return type is a dictionary, this should describe the keys and values of the dictionary.",
                 "type": "string"
             }
         },

@@ -128,7 +128,8 @@ class StepProcessor:
 
     def perform(self, action: str, progress_report: str) -> str:
         # docstring = LLMMethods.make_function_docstring(action, model="gpt-4")
-        docstring = LLMMethods.make_function_docstring(action, model="gpt-3.5-turbo")
+        # docstring = LLMMethods.make_function_docstring(action, model="gpt-3.5-turbo")
+        docstring = LLMMethods.make_function_docstring(action, model="gpt-4-0613")
         """
         full_info = (
             f"{progress_report}\n"
