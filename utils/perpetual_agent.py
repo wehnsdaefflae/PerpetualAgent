@@ -176,16 +176,22 @@ class PerpetualAgent:
         summary_length_limit = 5_000
 
         i = 1
-        summary = "[no steps performed yet]"
         progress = "[no steps performed yet]"
-        last_progress = ""
-        last_action = ""
-        last_result = ""
+        last_progress = "[no steps performed yet]"
+        last_action = "[no steps performed yet]"
+        last_result = "[no steps performed yet]"
         while True:
             # "gpt-3.5-turbo-16k-0613", "gpt-4-32k-0613", "gpt-4-0613", "gpt-3.5-turbo-0613"
 
             output_step = f"Step {i}:"
             print(output_step)
+
+            summary = PROGRESS_REPORT.format(
+                request=improved_request.strip(),
+                progress=last_progress.strip(),
+                action=last_action.strip(),
+                result=last_result.strip(),
+            )
 
             if i < 2:
                 print(f"{colorama.Fore.CYAN}First step.")
@@ -195,12 +201,6 @@ class PerpetualAgent:
             else:
 
                 print(f"{colorama.Fore.CYAN}Progress: {progress.strip()}")
-                summary = PROGRESS_REPORT.format(
-                    request=improved_request.strip(),
-                    progress=last_progress.strip(),
-                    action=last_action.strip(),
-                    result=last_result.strip(),
-                )
                 action = LLMMethods.sample_next_action(summary, model="gpt-4")
                 # action = LLMMethods.sample_next_action(summary, model="gpt-3.5-turbo")
 
