@@ -8,11 +8,10 @@ import numpy
 import openai
 from hyperdb import hyper_SVM_ranking_algorithm_sort
 
-from utils import openai_function_schemata
 from utils.basic_llm_calls import openai_chat, get_embeddings
 from utils.logging_handler import logging_handlers
 from utils.misc import extract_docstring, extract_code_blocks, Arg, Kwarg, DocstringData, compose_docstring
-from utils.openai_function_schemata import docstring_schema
+from utils.json_schemata import docstring_schema, get_intermediate_results
 from utils.prompts import DOCSTRING_WRITER, REQUEST_IMPROVER
 from utils.toolbox import ToolBox
 
@@ -151,13 +150,16 @@ class LLMMethods(ABC):
         arguments_str = function_call["arguments"]
         arguments = json.loads(arguments_str)
         if strict and not all(each_argument in arguments for each_argument in parameters["required"]):
-            raise ExtractionException(f"OpenAI API did not return the expected arguments. Expected: {tool_schema['parameters']['required']}, actual: {arguments}")
+            raise ExtractionException(
+                f"OpenAI API did not return the expected arguments. "
+                f"Missing: {[each_argument for each_argument in tool_schema['parameters']['required'] if each_argument not in arguments]}"
+            )
 
         return arguments
 
     @staticmethod
     def compose(request: str, previous_responses: list[str], **parameters: any) -> str:
-        oai_intermediate = openai_function_schemata.get_intermediate_results
+        oai_intermediate = get_intermediate_results
         arguments_json = json.dumps({"request": request})
         result_json = json.dumps(previous_responses)
         messages = [
@@ -264,64 +266,18 @@ class LLMMethods(ABC):
         return tool_name.strip()
 
     @staticmethod
-    def make_function_docstring(action: str, **parameters: any) -> str:
+    def _make_function_docstring(action: str, **parameters: any) -> str:
         prompt = DOCSTRING_WRITER.format(action=action)
         response = LLMMethods.respond(prompt, list(), function_id="make_function_docstring", **parameters)
         docstring = extract_docstring(response)
         return docstring.strip()
 
     @staticmethod
-    def _make_function_docstring(action: str, **parameters: any) -> str:
+    def make_function_docstring(action: str, **parameters: any) -> str:
         # docstring_dict = LLMMethods.extract_arguments(action, docstring_schema, **parameters)
-        docstring_dict = LLMMethods.openai_extract_arguments(action, docstring_schema, strict=False, **parameters)
+        docstring_dict = LLMMethods.openai_extract_arguments(action, docstring_schema, strict=True, **parameters)
         args_list = docstring_dict.pop("args", [])
         kwargs_list = docstring_dict.pop("kwargs", [])
-
-        python_to_json = {
-            "list": "array",
-            "dict": "object",
-            "str": "string",
-            "int": "integer",
-            "float": "number",
-            "bool": "boolean",
-            "None": "null"
-        }
-
-        example_parameters = docstring_dict.get("example_parameters")
-        if example_parameters is None:
-            if 0 < len(args_list) + len(kwargs_list):
-                example_args = {
-                    each_dict["name"]: {
-                        "type": python_to_json.get(each_dict["type"], each_dict["type"]),
-                        "description": each_dict["description"]
-                    }
-                    for each_dict in args_list
-                }
-
-                example_kwargs = {
-                    each_dict["name"]: {
-                        "type": python_to_json.get(each_dict["type"], each_dict["type"]),
-                        "description": each_dict["description"],
-                        "default": each_dict["default_value"]
-                    }
-                    for each_dict in kwargs_list
-                }
-
-                new_schema = {
-                    "name": f"make_example_arguments_for_{docstring_dict['name']}",
-                    "description": f"Generate arguments for an explanatory call of a function with the following description:"
-                                   f" {docstring_dict['description'].strip()}",
-                    "parameters": {
-                        "type": "object",
-                        "properties": example_args | example_kwargs,
-                        "required": list(example_args.keys()) + list(example_kwargs.keys())
-                    }
-                }
-
-                example_parameters = LLMMethods.openai_extract_arguments("make_examples", new_schema, **parameters)
-                docstring_dict["example_parameters"] = example_parameters
-            else:
-                docstring_dict["example_parameters"] = dict()
 
         args = [Arg(**each_dict) for each_dict in args_list]
         kwargs = [Kwarg(**each_dict) for each_dict in kwargs_list]

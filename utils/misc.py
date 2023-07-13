@@ -129,11 +129,12 @@ class Arg:
     name: str
     type: str
     description: str
+    example_value: any
 
 
 @dataclasses.dataclass
 class Kwarg(Arg):
-    default_value: str
+    default_value: any
 
 
 @dataclasses.dataclass
@@ -143,7 +144,6 @@ class DocstringData:
     description: str
     args: list[Arg]
     kwargs: list[Kwarg]
-    example_parameters: dict[str, any]
     return_type: str
     return_description: str
 
@@ -158,13 +158,13 @@ def compose_docstring(docstring_data: DocstringData) -> str:
             )
         else:
             kwarg_lines.append(
-                f"    {each_kwarg.name} ({each_kwarg.type}): {each_kwarg.description}. Defaults to {each_kwarg.default_value!r}."
+                f"    {each_kwarg.name} ({each_kwarg.type}): {each_kwarg.description.removesuffix('.')}. Defaults to {each_kwarg.default_value!r}."
             )
     args_str += "\n".join(kwarg_lines)
 
     example_args = ", ".join(
-        [f"{value!r}" for key, value in docstring_data.example_parameters.items() if key in docstring_data.args and key not in docstring_data.kwargs] +
-        [f"{key}={value!r}" for key, value in docstring_data.example_parameters.items() if key in docstring_data.kwargs and key not in docstring_data.args]
+        [f"{each_arg.example_value!r}" for each_arg in docstring_data.args] +
+        [f"{each_kwarg.name}={each_kwarg.example_value!r}" for each_kwarg in docstring_data.kwargs]
     )
 
     return (

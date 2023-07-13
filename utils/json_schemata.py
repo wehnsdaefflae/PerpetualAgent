@@ -120,8 +120,11 @@ docstring_schema = {
                             "description": "A description of the argument.",
                             "type": "string"
                         },
+                        "example_value": {
+                            "description": "An example value for the argument.",
+                        }
                     },
-                    "required": ["name", "type", "description"]
+                    "required": ["name", "type", "description", "example_value"]
                 }
             },
             "kwargs": {
@@ -143,28 +146,24 @@ docstring_schema = {
                             "type": "string"
                         },
                         "default_value": {
-                            "description": "The default value of the argument. 'None' if optional.",
-                            "type": "string"
+                            "description": "The default value of the argument. `None` if optional."
                         },
+                        "example_value": {
+                            "description": "An example value for the argument.",
+                        }
                     },
-                    "required": ["name", "type", "description", "default_value"]
+                    "required": ["name", "type", "description", "default_value", "example_value"]
                 },
             },
-            "example_parameters": {
-                "description": "A dictionary with an example value for each individual argument. The keys should be the same as the argument names "
-                               "and the values should be the example values. The empty dictionary if the function does not take any arguments.",
-                "type": "object",
-                "additionalProperties": True,
-            },
             "return_type": {
-                "description": "The type of the return value. 'None' if the function does not return anything.",
+                "description": "The type of the return value. `None` if the function does not return anything.",
                 "type": "string"
             },
             "return_description": {
-                "description": "A description of the return value. If the return type is a dictionary, this should describe the keys and values of the dictionary.",
+                "description": "A description of the return value. If the return type is a dictionary, this describes every key of the dictionary and its value.",
                 "type": "string"
             }
         },
-        "required": ["name", "summary", "description", "args", "example_parameters", "return_type", "return_description"]
+        "required": ["name", "summary", "description", "args", "return_type", "return_description"]
     }
 }

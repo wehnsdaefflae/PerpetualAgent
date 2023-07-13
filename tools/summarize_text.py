@@ -5,20 +5,22 @@ from utils.llm_methods import LLMMethods
 
 
 def summarize_text(text: str, len_summary: int, focus: str | None = None) -> str:
-    """
-    Generates a summary of a provided text of a specified length and, optionally, with a specified focus. Can be applied in any context where summarizing large amounts of text is needed, such as abstract generation for academic papers, summarizing news articles, or creating concise reports from lengthy data.
+    """Generates a concise summary of the provided text based on the specified length and focus.
+
+    This function aims to summarize any given text based on a user-specified character count and, if provided, a specific area of focus. It can be particularly useful in contexts such as academic research for generating paper abstracts, journalism for summarizing news articles, or data analysis where distilling lengthy reports into compact summaries is beneficial.
 
     Example:
         >>> summarize_text("Paris is the capital and most populous city of France.", 500, focus="population")
 
     Args:
-        text (str): The text to be summarized.
-        len_summary (int): The desired character count of the summary.
-        focus (str, optional): An optional focus for the summary.
+        text (str): The original text to be summarized.
+        len_summary (int): The desired character count for the summary. The summary's length will not exceed this value.
+        focus (str, optional): A keyword or topic that should be emphasized in the summary. If no focus is provided, the summary will be generated based on the overall content.
 
     Returns:
-        str: A summary of the input text with the specified length and focus.
+        str: A succinct and focused summary of the input text, constructed to adhere to the user-specified length and focus constraints.
     """
+
     len_text = len(text)
     if len_summary >= len_text:
         return text

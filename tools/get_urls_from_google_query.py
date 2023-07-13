@@ -5,17 +5,18 @@ import requests
 
 
 def get_urls_from_google_query(search_query: str) -> list[str]:
-    """
-    Retrieves a list of URLs relevant to a given search query based on Google's search results. Can be used whenever there is a need to automate the process of getting search engine results. It is helpful when building systems that need to consume and analyze content from the web in response to a variety of search queries.
+    """Obtains a list of URLs corresponding to Google's search results for a given query, aiding automated systems that consume and analyze web content.
+
+    This function enables the automation of Google search results retrieval, particularly useful in building systems that need to analyze web content in response to diverse search queries.
 
     Example:
         >>> get_urls_from_google_query("how to make a website")
 
     Args:
-        search_query (str): The query to search in Google.
+        search_query (str): The search query to be submitted to Google.
 
     Returns:
-        list[str]: A list of URLs associated with the search query. If an error occurs, it returns a list containing a single string detailing the error.
+        list[str]: A list of URLs returned from the Google search corresponding to the search query. In case of an error, the function returns a list containing a single string that details the error.
     """
     with open("resources/configs/google.json", mode="r", encoding="utf-8") as f:
         config = json.load(f)

@@ -8,7 +8,6 @@ import colorama
 
 from utils.basic_llm_calls import openai_chat
 from utils.llm_methods import LLMMethods
-from utils.openai_function_schemata import docstring_schema
 from utils.prompts import CODER, STEP_SUMMARIZER
 from utils.logging_handler import logging_handlers
 from utils.misc import truncate, extract_code_blocks
@@ -130,6 +129,7 @@ class StepProcessor:
         # docstring = LLMMethods.make_function_docstring(action, model="gpt-4")
         # docstring = LLMMethods.make_function_docstring(action, model="gpt-3.5-turbo")
         docstring = LLMMethods.make_function_docstring(action, model="gpt-4-0613")
+        # docstring = LLMMethods.make_function_docstring(action, model="gpt-3.5-turbo-0613")
         """
         full_info = (
             f"{progress_report}\n"
@@ -176,7 +176,7 @@ class PerpetualAgent:
         summary_length_limit = 5_000
 
         i = 1
-        summary = "Request already fulfilled."
+        summary = "[no steps performed yet]"
         progress = "[no steps performed yet]"
         last_progress = ""
         last_action = ""

@@ -3,8 +3,9 @@ from datetime import datetime
 
 
 def get_current_date_time() -> str:
-    """
-    Retrieves the current date and time, expressed as a string in the format "YYYY-MM-DD HH:MM:SS". Can be used in any scenario where current time stamping is required, such as logging events, creating time-based unique identifiers, or recording the execution time of tasks.
+    """Retrieves the current date and time as a string in the standard "YYYY-MM-DD HH:MM:SS" format.
+
+    This function fetches the current date and time and formats it as a string in the international standard date and time notation "YYYY-MM-DD HH:MM:SS". It can be implemented in a variety of situations where time stamping is needed such as event logging, creation of time-based unique identifiers, or tracking the execution duration of certain tasks.
 
     Example:
         >>> get_current_date_time()

@@ -178,11 +178,11 @@ class ToolBox:
 
     def get_description_from_docstring(self, docstring: str) -> str:
         parsed_doc = parse(docstring)
-        tool_short_description = parsed_doc.short_description
-        tool_long_description = parsed_doc.long_description
+        tool_short_description = parsed_doc.short_description.removeprefix("\"\"\"").removesuffix("\"\"\"")
+        tool_long_description = parsed_doc.long_description.removeprefix("\"\"\"").removesuffix("\"\"\"")
         if tool_long_description is None:
             return tool_short_description
-        return " ".join(tool_short_description.split("\n")) + " " + " ".join(tool_long_description.split("\n"))
+        return (" ".join(tool_short_description.split("\n"))).removesuffix(".") + ". " + " ".join(tool_long_description.split("\n"))
 
     def get_docstring_description_from_code(self, code: str) -> str:
         tool_doc = self.get_docstring_from_code(code)

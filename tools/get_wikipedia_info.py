@@ -3,20 +3,20 @@ import wikipedia
 
 
 def get_wikipedia_info(wikipedia_page_name: str) -> str:
-    """
-    This function retrieves a brief summary of a specified Wikipedia page.
+    """Retrieves a summary of a specified Wikipedia page.
+
+    This function fetches a concise summary of a desired Wikipedia article, given its title. If the specified article leads to a disambiguation page, the function returns a list of potential options for the user to further specify their search. In case the specified page does not exist, it either suggests a similar existing page or alerts the user if there's no related page available.
 
     Example:
         >>> get_wikipedia_info("Python (programming language)")
 
     Args:
-        wikipedia_page_name (str): The title of the desired Wikipedia article.
+        wikipedia_page_name (str): The title of the Wikipedia article from which the summary is to be retrieved.
 
     Returns:
-        str: If the specified page exists, a string containing the summary of that Wikipedia page is returned.
-        In case of a disambiguation page, a list of possible options is returned for further specification.
-        If the page does not exist, the function suggests a similar existing page or notifies the user if no similar page can be found.
+        str: A string containing the summary of the Wikipedia page if it exists. If the specified page leads to a disambiguation page, a list of potential matches is returned. In the event that the page does not exist, the function either suggests a similar page or notifies the user if no suitable alternative can be found.
     """
+
     try:
         return wikipedia.summary(wikipedia_page_name, auto_suggest=False)
     except wikipedia.exceptions.DisambiguationError as e:
