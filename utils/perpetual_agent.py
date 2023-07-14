@@ -174,6 +174,16 @@ class PerpetualAgent:
         summary_length_limit = 5_000
 
         i = 1
+        full_report = {
+            "request": main_request,
+            "progress": None,
+            "last_action": None,
+            "last_result": None,
+        }
+        update_info = {
+            "updated_progress": None,
+            "action_helpful": False,
+        }
         progress = "[no steps performed yet]"
         last_progress = "[no progress yet]"
         last_tool_call = "[no action yet]"
@@ -190,6 +200,7 @@ class PerpetualAgent:
                     f"## Request\n"
                     f"{improved_request.strip()}"
                 )
+                # use improved_request as the first step
                 action = LLMMethods.sample_first_action(improved_request, model="gpt-3.5-turbo")
 
             else:
@@ -232,6 +243,9 @@ class PerpetualAgent:
             last_progress = progress
 
             progress = LLMMethods.respond(update_progress_prompt, list(), function_id="summarize", model="gpt-3.5-turbo")
+            # incorporate last_action and last_result into progress
+            # evaluate success of action (via result)
+            # make action last_action and result last_result
             self.main_logger.info(progress)
 
             last_tool_call = tool_result.tool_call
