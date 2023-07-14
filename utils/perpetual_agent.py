@@ -10,7 +10,7 @@ from utils.basic_llm_calls import openai_chat
 from utils.llm_methods import LLMMethods
 from utils.prompts import CODER, STEP_SUMMARIZER
 from utils.logging_handler import logging_handlers
-from utils.misc import truncate, extract_code_blocks
+from utils.misc import truncate, extract_code_blocks, insert_docstring
 from utils.prompts import PROGRESS_UPDATER, PROGRESS_REPORT
 from utils.toolbox import ToolBox
 
@@ -40,13 +40,14 @@ class StepProcessor:
         self.implementation_attempts = implementation_attempts
         self.result_limit = result_limit
 
-    def _make_code(self, message_history: list[dict[str, any]]) -> str:
+    def _make_code(self, message_history: list[dict[str, any]], docstring: str) -> str:
         response = openai_chat("make_code", messages=message_history, model="gpt-4")
         message = response["choices"][0]["message"]
         content = message["content"]
 
         try:
             tool_code = extract_code_blocks(content)[0]
+            tool_code = insert_docstring(tool_code, docstring)
             _ = self.toolbox.get_name_from_code(tool_code)
             _ = self.toolbox.get_temp_tool_from_code(tool_code)
             _ = self.toolbox.get_schema_from_code(tool_code)
@@ -99,16 +100,16 @@ class StepProcessor:
 
         for _ in range(self.implementation_attempts):
             try:
-                new_tool_code = self._make_code(message_history)
+                new_tool_code = self._make_code(message_history, docstring)
 
             except ToolCreationException as e:
                 self.logger.error(e)
                 print(colorama.Style.RESET_ALL)
-                return f"Tool creation failed. {e}"
+                return f"Tool creation failed. {e.__cause__ if e.__cause__ else e}"
 
             tmp_tool = self.toolbox.get_temp_tool_from_code(new_tool_code)
             tool_schema = self.toolbox.get_schema_from_code(new_tool_code)
-            arguments = LLMMethods.extract_arguments(text, tool_schema, model="gpt-3.5-turbo")
+            arguments = LLMMethods.openai_extract_arguments(text, tool_schema, model="gpt-3.5-turbo-0613")
             tool_result = self._apply_tool(tmp_tool, arguments, True)
             if tool_result.succeeded:
                 self.toolbox.save_tool_code(new_tool_code, False)
@@ -126,22 +127,12 @@ class StepProcessor:
         return result
 
     def perform(self, action: str, progress_report: str) -> str:
-        # docstring = LLMMethods.make_function_docstring(action, model="gpt-4")
-        # docstring = LLMMethods.make_function_docstring(action, model="gpt-3.5-turbo")
-        docstring = LLMMethods.make_function_docstring(action, model="gpt-4-0613")
-        # docstring = LLMMethods.make_function_docstring(action, model="gpt-3.5-turbo-0613")
-        """
-        full_info = (
-            f"{progress_report}\n"
-            f"\n"
-            f"## This step\n"
-            f"### Action\n"
-            f"{action}"
-        )
-        docstring = LLMMethods.openai_extract_arguments(full_info, docstring_schema)
-        """
-        tool_description = self.toolbox.get_description_from_docstring(docstring)
-        tool_name = LLMMethods.select_tool_name(self.toolbox, tool_description)
+        try:
+            docstring = LLMMethods.make_function_docstring(action, model="gpt-4-0613")
+        except Exception as e:
+            return f"Action description failed. {e}"
+
+        tool_name = LLMMethods.select_tool_name(self.toolbox, docstring)
         if tool_name is None:
             print(f"{colorama.Fore.BLACK}{colorama.Back.RED}{colorama.Style.BRIGHT}New tool: ", end="")
             tool_result = self._apply_new_tool(progress_report, docstring)
@@ -177,32 +168,33 @@ class PerpetualAgent:
 
         i = 1
         progress = "[no steps performed yet]"
-        last_progress = "[no steps performed yet]"
-        last_action = "[no steps performed yet]"
-        last_result = "[no steps performed yet]"
+        last_progress = "[no progress yet]"
+        last_action = "[no action yet]"
+        last_result = "[no result yet]"
         while True:
             # "gpt-3.5-turbo-16k-0613", "gpt-4-32k-0613", "gpt-4-0613", "gpt-3.5-turbo-0613"
 
             output_step = f"Step {i}:"
             print(output_step)
 
-            summary = PROGRESS_REPORT.format(
-                request=improved_request.strip(),
-                progress=last_progress.strip(),
-                action=last_action.strip(),
-                result=last_result.strip(),
-            )
-
             if i < 2:
                 print(f"{colorama.Fore.CYAN}First step.")
-                # action = LLMMethods.sample_first_action(improved_request, model="gpt-4")
+                summary = (
+                    f"## Request\n"
+                    f"{improved_request.strip()}"
+                )
                 action = LLMMethods.sample_first_action(improved_request, model="gpt-3.5-turbo")
 
             else:
-
                 print(f"{colorama.Fore.CYAN}Progress: {progress.strip()}")
+                summary = PROGRESS_REPORT.format(
+                    request=improved_request.strip(),
+                    progress=last_progress.strip(),
+                    action=last_action.strip(),
+                    result=last_result.strip(),
+                )
+
                 action = LLMMethods.sample_next_action(summary, model="gpt-4")
-                # action = LLMMethods.sample_next_action(summary, model="gpt-3.5-turbo")
 
             self.main_logger.info(action)
             print(f"{colorama.Fore.YELLOW}Action: {action.strip()}")

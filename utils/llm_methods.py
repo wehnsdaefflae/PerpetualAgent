@@ -10,7 +10,7 @@ from hyperdb import hyper_SVM_ranking_algorithm_sort
 
 from utils.basic_llm_calls import openai_chat, get_embeddings
 from utils.logging_handler import logging_handlers
-from utils.misc import extract_docstring, extract_code_blocks, Arg, Kwarg, DocstringData, compose_docstring
+from utils.misc import extract_docstring, extract_code_blocks, Arg, DocstringData, compose_docstring, ReturnValue
 from utils.json_schemata import docstring_schema, get_intermediate_results
 from utils.prompts import DOCSTRING_WRITER, REQUEST_IMPROVER
 from utils.toolbox import ToolBox
@@ -149,13 +149,38 @@ class LLMMethods(ABC):
         parameters = tool_schema["parameters"]
         arguments_str = function_call["arguments"]
         arguments = json.loads(arguments_str)
-        if strict and not all(each_argument in arguments for each_argument in parameters["required"]):
-            raise ExtractionException(
-                f"OpenAI API did not return the expected arguments. "
-                f"Missing: {[each_argument for each_argument in tool_schema['parameters']['required'] if each_argument not in arguments]}"
-            )
+
+        missing_keys = LLMMethods.find_missing_keys(arguments, parameters)
+        if len(missing_keys) > 0:
+            logger.warning(f"OpenAI API did not return all the required arguments. Missing: {missing_keys}")
+            if strict:
+                raise ExtractionException(f"OpenAI API did not return all the required arguments. Missing: {missing_keys}")
 
         return arguments
+
+    @staticmethod
+    def find_missing_keys(json_obj: dict[str, any], schema: dict[str, any], path: list[str] | None = None) -> list[list[str]]:
+        if path is None:
+            path = list()
+
+        missing_keys = list()
+
+        if "properties" in schema:
+            for key, value in schema["properties"].items():
+                # Compute the JSON path for the current key
+                key_path = path + [key]
+                if "required" in schema and key in schema["required"] and key not in json_obj:
+                    missing_keys.append(key_path)
+                elif key in json_obj:
+                    missing_keys += LLMMethods.find_missing_keys(json_obj[key], value, key_path)
+
+        elif "items" in schema and isinstance(json_obj, list):
+            for i, item in enumerate(json_obj):
+                # Compute the JSON path for the current index in the array
+                index_path = path + [str(i)]
+                missing_keys += LLMMethods.find_missing_keys(item, schema['items'], index_path)
+
+        return missing_keys
 
     @staticmethod
     def compose(request: str, previous_responses: list[str], **parameters: any) -> str:
@@ -277,10 +302,9 @@ class LLMMethods(ABC):
         # docstring_dict = LLMMethods.extract_arguments(action, docstring_schema, **parameters)
         docstring_dict = LLMMethods.openai_extract_arguments(action, docstring_schema, strict=True, **parameters)
         args_list = docstring_dict.pop("args", [])
-        kwargs_list = docstring_dict.pop("kwargs", [])
+        return_value = docstring_dict.pop("return_value", {"python_type": "None", "description": None, "default_value": None})
 
-        args = [Arg(**each_dict) for each_dict in args_list]
-        kwargs = [Kwarg(**each_dict) for each_dict in kwargs_list]
-        docstring_data = DocstringData(args=args, kwargs=kwargs, **docstring_dict)
+        args = [Arg(default_value=each_dict.pop("default_value", None), **each_dict) for each_dict in args_list]
+        docstring_data = DocstringData(args=args, return_value=ReturnValue(**return_value), **docstring_dict)
         docstring_str = compose_docstring(docstring_data)
         return docstring_str

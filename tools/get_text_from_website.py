@@ -14,7 +14,7 @@ def get_text_from_website(url: str, len_summary: int | None = None) -> str:
     This function retrieves and provides a summary of the visible text content from a specified URL. The user can define the length of the summary, making it ideal for applications requiring a succinct overview of a webpage's content without manual browsing, or when only a brief summary is required.
 
     Example:
-        >>> extract_and_summarize_web_text("https://en.wikipedia.org/wiki/Paris", len_summary=500)
+        >>> get_text_from_website("https://en.wikipedia.org/wiki/Paris", len_summary=500)
 
     Args:
         url (str): The URL of the webpage from which to extract text.

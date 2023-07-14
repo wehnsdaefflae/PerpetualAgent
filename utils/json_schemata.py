@@ -91,7 +91,7 @@ docstring_schema = {
         "type": "object",
         "properties": {
             "name": {
-                "description": "The name of the function.",
+                "description": "A descriptive name for the function.",
                 "type": "string"
             },
             "summary": {
@@ -103,7 +103,7 @@ docstring_schema = {
                 "type": "string"
             },
             "args": {
-                "description": "A list of dictionaries describing the function's positional arguments. Empty if the function does not take any positional arguments.",
+                "description": "A list of dictionaries describing the function's arguments. Empty if the function does not take any arguments.",
                 "type": "array",
                 "items": {
                     "type": "object",
@@ -112,58 +112,49 @@ docstring_schema = {
                             "description": "The name of the argument.",
                             "type": "string"
                         },
-                        "type": {
+                        "python_type": {
                             "description": "The type of the argument.",
                             "type": "string"
                         },
-                        "description": {
-                            "description": "A description of the argument.",
-                            "type": "string"
-                        },
-                        "example_value": {
-                            "description": "An example value for the argument.",
-                        }
-                    },
-                    "required": ["name", "type", "description", "example_value"]
-                }
-            },
-            "kwargs": {
-                "description": "A list of dictionaries describing the function's keyword arguments. Empty if the function does not take any keyword arguments.",
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "description": "The name of the argument.",
-                            "type": "string"
-                        },
-                        "type": {
-                            "description": "The type of the argument.",
-                            "type": "string"
+                        "argument_passing_style": {
+                            "description": "The passing style of the argument. `positional` if the argument is positional, `keyword` if the argument is optional.",
+                            "type": "string",
+                            "enum": ["positional", "keyword"]
                         },
                         "description": {
-                            "description": "A description of the argument.",
+                            "description": "A description of the argument without the default value.",
                             "type": "string"
                         },
                         "default_value": {
-                            "description": "The default value of the argument. `None` if optional."
+                            "description": "Not set for positional arguments. The default value of the keyword argument. `None` if optional."
                         },
                         "example_value": {
                             "description": "An example value for the argument.",
                         }
                     },
-                    "required": ["name", "type", "description", "default_value", "example_value"]
+                    "required": ["name", "type", "arg_type", "description", "example_value"]
+                }
+            },
+            "return_value": {
+                "type": "object",
+                "description": "A dictionary describing the function's return value. Empty if the function does not return anything.",
+                "properties": {
+                    "python_type": {
+                        "description": "The type of the return value. `None` if the function does not return anything.",
+                        "type": "string"
+                    },
+                    "description": {
+                        "description": "A description of the return value, including all keys, values and their types in case the return type is a dictionary or is "
+                                       "composed of dictionaries.",
+                        "type": "string"
+                    },
+                    "example_value": {
+                        "description": "An example for the function return value. Make sure it makes sense in combination with the arguments' example values."
+                    }
                 },
-            },
-            "return_type": {
-                "description": "The type of the return value. `None` if the function does not return anything.",
-                "type": "string"
-            },
-            "return_description": {
-                "description": "A description of the return value. If the return type is a dictionary, this describes every key of the dictionary and its value.",
-                "type": "string"
+                "required": ["type", "description", "example_value"]
             }
         },
-        "required": ["name", "summary", "description", "args", "return_type", "return_description"]
+        "required": ["name", "summary", "description", "args", "return_value"]
     }
 }

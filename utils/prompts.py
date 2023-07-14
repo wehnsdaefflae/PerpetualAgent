@@ -111,10 +111,8 @@ CODER = (
     "{docstring}\n"
     f"\n"
     "## Instructions\n"
-    "Generate a Python function that implements the docstring above. Make it general enough to be used in "
-    "diverse use cases and contexts. The function must be type hinted and working according to the docstring.\n"
-    "Make use of the available helper functions from the list above by importing them from the tools module (e.g. for "
-    "the calculate tool: `from tools.calculate import calculate`).\n"
+    "Generate a Python function that implements the docstring above. The function must be type hinted and working according to the docstring.\n"
+    "Make use of the available helper functions from the list above by importing them from the tools module (e.g. for the calculate tool: `from tools.calculate import "
+    "calculate`).\n"
     "Do not simulate behavior or use placeholder logic or variables that must be filled in manually (e.g. API keys)!\n"
-    "Respond with a single Python code block containing only the required imports as well as the working function including "
-    "the above docstring. Format the docstring according to the Google style guide.")
+    "Respond with a single Python code block containing only the required imports as well as the working function.")

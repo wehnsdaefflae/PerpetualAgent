@@ -4,6 +4,7 @@ import dataclasses
 import re
 
 import logging
+from enum import Enum
 
 from utils.logging_handler import logging_handlers
 
@@ -100,41 +101,56 @@ def extract_code_blocks(text: str, code_type: str | None = None) -> tuple[str, .
 def insert_docstring(func_code: str, docstring: str) -> str:
     # Parse the function code into an AST
     module = ast.parse(func_code)
+    indented_docstring = "\n".join(("" if i < 1 else "    ") + each_line for i, each_line in enumerate(docstring.splitlines())) + "\n    "
 
-    # Loop through the statements in the module to find the function
+    # Loop through the statements in the module to find the first function
     for statement in module.body:
         # Check if the statement is a function definition
         if isinstance(statement, ast.FunctionDef):
             # Check for an existing docstring and remove it
+            # Here, it is important to note that the first string literal in the function is removed
+            # regardless of whether it is used as a docstring or not.
             if (statement.body and isinstance(statement.body[0], ast.Expr)
                     and isinstance(statement.body[0].value, ast.Constant)
                     and isinstance(statement.body[0].value.value, str)):
                 del statement.body[0]
 
             # Create a new docstring node
-            docstring_node = ast.Constant(value=docstring, kind=None)
+            # From Python 3.8 and onwards, all constant values are represented by ast.Constant nodes,
+            # ast.Str is deprecated.
+            docstring_node = ast.Constant(value=indented_docstring, kind=None)
 
             # Insert the docstring node at the start of the function body
             statement.body.insert(0, ast.Expr(value=docstring_node))
 
             # Unparse the AST back into source code
+            # The unparse method is part of the astunparse package, which needs to be installed separately.
             return ast.unparse(module)
 
-    # If no function was found, return the original code
-    return func_code
+    # If no function was found, raise an error
+    raise SyntaxError("No function definition found")
+
+
+class PassingStyle(Enum):
+    POSITIONAL = "positional"
+    KEYWORD = "keyword"
 
 
 @dataclasses.dataclass
 class Arg:
     name: str
-    type: str
+    python_type: str
+    argument_passing_style: PassingStyle
     description: str
+    default_value: any
     example_value: any
 
 
 @dataclasses.dataclass
-class Kwarg(Arg):
-    default_value: any
+class ReturnValue:
+    python_type: str
+    description: str | None
+    example_value: any
 
 
 @dataclasses.dataclass
@@ -143,42 +159,59 @@ class DocstringData:
     summary: str
     description: str
     args: list[Arg]
-    kwargs: list[Kwarg]
-    return_type: str
-    return_description: str
+    return_value: ReturnValue
 
 
 def compose_docstring(docstring_data: DocstringData) -> str:
-    args_str = "\n".join(f"    {arg.name} ({arg.type}): {arg.description}\n" for arg in docstring_data.args)
-    kwarg_lines = list()
-    for each_kwarg in docstring_data.kwargs:
+    args_positional = [each_arg for each_arg in docstring_data.args if each_arg.argument_passing_style == PassingStyle.POSITIONAL.value]
+    args_keyword = [each_arg for each_arg in docstring_data.args if each_arg.argument_passing_style == PassingStyle.KEYWORD.value]
+
+    arg_lines = list()
+    for each_arg in args_positional:
+        one_line_description = " ".join(each_arg.description.splitlines())
+        each_line = f"{each_arg.name.strip()} ({each_arg.python_type.strip()}): {one_line_description}"
+        arg_lines.append("    " + each_line.strip())
+
+    for each_kwarg in args_keyword:
+        each_line = f"{each_kwarg.name.strip()} "
+        one_line_description = " ".join(each_kwarg.description.splitlines())
         if each_kwarg.default_value is None:
-            kwarg_lines.append(
-                f"    {each_kwarg.name} ({each_kwarg.type}, optional): {each_kwarg.description}"
-            )
+            each_line += f"(Optional[{each_kwarg.python_type.strip()}]): {one_line_description}"
         else:
-            kwarg_lines.append(
-                f"    {each_kwarg.name} ({each_kwarg.type}): {each_kwarg.description.removesuffix('.')}. Defaults to {each_kwarg.default_value!r}."
-            )
-    args_str += "\n".join(kwarg_lines)
+            each_line += f"({each_kwarg.python_type.strip()}): {one_line_description.removesuffix('.')}. Defaults to {each_kwarg.default_value!r}."
+        arg_lines.append("    " + each_line.strip())
+
+    if len(arg_lines) < 1:
+        args_str = "    None"
+    else:
+        args_str = "\n".join(arg_lines)
 
     example_args = ", ".join(
-        [f"{each_arg.example_value!r}" for each_arg in docstring_data.args] +
-        [f"{each_kwarg.name}={each_kwarg.example_value!r}" for each_kwarg in docstring_data.kwargs]
+        [f"{each_arg.example_value!r}" for each_arg in args_positional] +
+        [f"{each_kwarg.name}={each_kwarg.example_value!r}" for each_kwarg in args_keyword]
     )
 
+    if docstring_data.return_value.python_type == "None":
+        example_return_str = ""
+        return_str = "None"
+    else:
+        return_value = docstring_data.return_value
+        example_return_str = f"    {return_value.example_value!r}\n"
+        one_line_description = ' '.join(return_value.description.splitlines())
+        return_str = f"{return_value.python_type}: {one_line_description}"
+
     return (
-        f"\"\"\"{docstring_data.summary}\n"
+        f"{' '.join(docstring_data.summary.splitlines())}\n"
         f"\n"
-        f"{docstring_data.description}\n"
+        f"{' '.join(docstring_data.description.splitlines())}\n"
         f"\n"
         f"Args:\n"
         f"{args_str}\n"
         f"\n"
         f"Example:\n"
         f"    >>> {docstring_data.name}({example_args})\n"
+        f"{example_return_str}"
         f"\n"
         f"Returns:\n"
-        f"    {docstring_data.return_type}: {docstring_data.return_description}\n"
-        f"\"\"\""
+        f"    {return_str}\n"
     )
