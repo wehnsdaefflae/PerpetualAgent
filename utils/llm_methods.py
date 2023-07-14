@@ -10,9 +10,8 @@ from hyperdb import hyper_SVM_ranking_algorithm_sort
 
 from utils.basic_llm_calls import openai_chat, get_embeddings
 from utils.logging_handler import logging_handlers
-from utils.misc import extract_docstring, extract_code_blocks, Arg, DocstringData, compose_docstring, ReturnValue
-from utils.json_schemata import docstring_schema, get_intermediate_results
-from utils.prompts import DOCSTRING_WRITER, REQUEST_IMPROVER
+from utils.misc import extract_code_blocks
+from utils.prompts import REQUEST_IMPROVER
 from utils.toolbox import ToolBox
 
 logger = logging.getLogger(__name__)
@@ -35,14 +34,6 @@ class LLMMethods(ABC):
         prompt = REQUEST_IMPROVER.format(request=main_request)
         improved_request = LLMMethods.respond(prompt, list(), *parameters, **kwargs)
         return improved_request.strip()
-
-    @staticmethod
-    def summarize(text: str, instruction: str = "Summarize the text above.", **parameters: any) -> str:
-        prompt = (f"{text}\n"
-                  f"==============\n"
-                  f"{instruction}\n")
-        summary = LLMMethods.respond(prompt, list(), function_id="summarize", **parameters)
-        return summary.strip()
 
     @staticmethod
     def vector_summarize(request: str, text: str, segment_size: int = 500, overlap: int = 100, nearest_neighbors: int = 5, **parameters: any) -> str:
@@ -183,29 +174,6 @@ class LLMMethods(ABC):
         return missing_keys
 
     @staticmethod
-    def compose(request: str, previous_responses: list[str], **parameters: any) -> str:
-        oai_intermediate = get_intermediate_results
-        arguments_json = json.dumps({"request": request})
-        result_json = json.dumps(previous_responses)
-        messages = [
-            {"role": "user", "content": request},
-            {"role": "assistant", "content": None, "function_call": {"name": oai_intermediate["name"], "arguments": arguments_json}},
-            {"role": "function", "name": oai_intermediate["name"], "content": result_json}
-        ]
-
-        response = openai_chat(
-            "compose",
-            **parameters,
-            messages=messages,
-            functions=[oai_intermediate],
-            function_call="none",
-        )
-
-        response_message = response.choices[0]["message"]
-        content = response_message["content"]
-        return content.strip()
-
-    @staticmethod
     def respond(prompt: str, message_history: list[dict[str, str]], function_id: str = "respond", **parameters: any) -> str:
         response = openai_chat(
             function_id,
@@ -263,7 +231,7 @@ class LLMMethods(ABC):
             f"Think step-by-step: Given the progress report above, what conclusions do you draw regarding the request? What would be a computer's next action in order "
             f"to fulfill the request? Provide a one-sentence command in natural language for a single simple action towards fulfilling the request at hand.\n"
             f"\n"
-            f"Consider your limited memory and store / retrieve relevant information from previous steps.\n"
+            f"Consider memorizing / recalling relevant information from previous steps.\n"
             f"\n"
             f"Check thoroughly if the request is _already_ fulfilled according to the progress report. In this case respond only with \"[FINALIZE]\".")
         response = LLMMethods.respond(prompt, list(), function_id="sample_next_step_summary", **parameters)
@@ -285,26 +253,7 @@ class LLMMethods(ABC):
         tool_name = toolbox.vector_db.documents[document_index]
         logger.info(f"Selected tool: {tool_name} with fitness {fitness:.2f}")
 
-        if fitness < .8:
+        if fitness < .9:
             return None
 
         return tool_name.strip()
-
-    @staticmethod
-    def _make_function_docstring(action: str, **parameters: any) -> str:
-        prompt = DOCSTRING_WRITER.format(action=action)
-        response = LLMMethods.respond(prompt, list(), function_id="make_function_docstring", **parameters)
-        docstring = extract_docstring(response)
-        return docstring.strip()
-
-    @staticmethod
-    def make_function_docstring(action: str, **parameters: any) -> str:
-        # docstring_dict = LLMMethods.extract_arguments(action, docstring_schema, **parameters)
-        docstring_dict = LLMMethods.openai_extract_arguments(action, docstring_schema, strict=True, **parameters)
-        args_list = docstring_dict.pop("args", [])
-        return_value = docstring_dict.pop("return_value", {"python_type": "None", "description": None, "default_value": None})
-
-        args = [Arg(default_value=each_dict.pop("default_value", None), **each_dict) for each_dict in args_list]
-        docstring_data = DocstringData(args=args, return_value=ReturnValue(**return_value), **docstring_dict)
-        docstring_str = compose_docstring(docstring_data)
-        return docstring_str

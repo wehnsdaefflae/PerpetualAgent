@@ -1,5 +1,6 @@
 # coding=utf-8
 import dataclasses
+import json
 import logging
 import types
 from traceback import format_exc
@@ -71,7 +72,7 @@ class StepProcessor:
 
         if not self._confirmation(tool_call):
             del tool
-            return ToolResult(tool_call, "User rejected execution.", True)
+            return ToolResult(tool_call, "User rejected execution.", False)
 
         try:
             result = tool(**arguments)
@@ -101,14 +102,13 @@ class StepProcessor:
             try:
                 new_tool_code = self._make_code(message_history, docstring_dict)
                 new_tool_code = insert_docstring(new_tool_code, docstring)
+                tmp_tool = self.toolbox.get_temp_tool_from_code(new_tool_code, docstring_dict)
+                tool_schema = self.toolbox.get_schema_from_code(new_tool_code, docstring_dict)
 
             except ToolCreationException as e:
                 self.logger.error(e)
                 print(colorama.Style.RESET_ALL)
                 return ToolResult("[tool_creation_failed]", f"{e.__cause__ if e.__cause__ else e}", False)
-
-            tmp_tool = self.toolbox.get_temp_tool_from_code(new_tool_code, docstring_dict)
-            tool_schema = self.toolbox.get_schema_from_code(new_tool_code, docstring_dict)
 
             try:
                 arguments = LLMMethods.openai_extract_arguments(text, tool_schema, model="gpt-3.5-turbo-0613")
@@ -140,7 +140,7 @@ class StepProcessor:
         except Exception as e:
             return ToolResult("[action_selection_failed]", f"{e}", False)
 
-        tool_name = LLMMethods.select_tool_name(self.toolbox, docstring_dict["description"])
+        tool_name = LLMMethods.select_tool_name(self.toolbox, json.dumps(docstring_dict, indent=4, sort_keys=True))
         if tool_name is None:
             print(f"{colorama.Fore.BLACK}{colorama.Back.RED}{colorama.Style.BRIGHT}New tool: ", end="")
             tool_result = self._apply_new_tool(progress_report, docstring_dict)

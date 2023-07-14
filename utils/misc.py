@@ -1,10 +1,8 @@
 # coding=utf-8
 import ast
-import dataclasses
 import re
 
 import logging
-from enum import Enum
 
 from utils.logging_handler import logging_handlers
 
@@ -24,58 +22,6 @@ def truncate(string: str, limit: int, indicator: str = "[...]", at_start: bool =
         return indicator + string[len(string) - limit:]
 
     return string[:limit - len(indicator)] + indicator
-
-
-class DocstringException(Exception):
-    pass
-
-
-def extract_docstring(text: str) -> str:
-    """
-    This function extracts all the triple quoted strings from the given text.
-
-    Parameters:
-    text (str): The input string from which triple quoted strings need to be extracted.
-
-    Returns:
-    List[str]: A list of all triple quoted strings including the triple quotes.
-    """
-
-    # The pattern for triple quoted strings.
-    double_quote_pattern = r'\"\"\"(.*?)\"\"\"'
-    single_quote_pattern = r"\'\'\'(.*?)\'\'\'"
-    all_quote_pattern = f"{double_quote_pattern}|{single_quote_pattern}"
-
-    # Find all the matches for the pattern and flatten the result.
-    matches = re.findall(all_quote_pattern, text, re.DOTALL)
-    for double_quoted, single_quoted in matches:
-        if double_quoted:
-            return double_quoted
-        if single_quoted:
-            return single_quoted
-
-    raise DocstringException()
-
-
-def format_steps(message_history: list[dict[str, str]]) -> str:
-    previous_steps = list()
-    for i in range(0, len(message_history[-10:]), 2):
-        each_request_message, each_response_message = message_history[i:i + 2]
-        assert each_request_message["role"] == "user"
-        assert each_response_message["role"] == "assistant"
-
-        each_request = each_request_message["content"]
-        each_response = each_response_message["content"]
-
-        each_step = (
-            f"STEP:\n"
-            f"  ACTION: {each_request.strip()}\n"
-            f"  RESULT: {each_response.strip()}\n"
-        )
-
-        previous_steps.append(each_step)
-
-    return "===\n".join(previous_steps)
 
 
 def extract_code_blocks(text: str, code_type: str | None = None) -> tuple[str, ...]:
@@ -129,37 +75,6 @@ def insert_docstring(func_code: str, docstring: str) -> str:
 
     # If no function was found, raise an error
     raise SyntaxError("No function definition found")
-
-
-class PassingStyle(Enum):
-    POSITIONAL = "positional"
-    KEYWORD = "keyword"
-
-
-@dataclasses.dataclass
-class Arg:
-    name: str
-    python_type: str
-    argument_passing_style: PassingStyle
-    description: str
-    default_value: any
-    example_value: any
-
-
-@dataclasses.dataclass
-class ReturnValue:
-    python_type: str
-    description: str | None
-    example_value: any
-
-
-@dataclasses.dataclass
-class DocstringData:
-    name: str
-    summary: str
-    description: str
-    args: list[Arg]
-    return_value: ReturnValue
 
 
 def compose_docstring(docstring_data: dict[str, any]) -> str:

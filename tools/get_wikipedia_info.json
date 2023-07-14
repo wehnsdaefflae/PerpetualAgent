@@ -6,7 +6,7 @@
         {
             "name": "wikipedia_page_name",
             "python_type": "str",
-            "is_keyword_Argument": false,
+            "is_keyword_argument": false,
             "description": "The title of the Wikipedia article from which the summary is to be retrieved.",
             "default_value": null,
             "example_value": "Python (programming language)"

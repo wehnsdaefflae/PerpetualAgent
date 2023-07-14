@@ -11,6 +11,7 @@ import hyperdb
 
 from utils.basic_llm_calls import get_embeddings
 from utils.logging_handler import logging_handlers
+from utils.perpetual_agent import ToolCreationException
 
 
 class ToolBox:
@@ -44,7 +45,7 @@ class ToolBox:
 
         self.logger.info(f"Initializing database with {len(tool_names)} tools")
         docstrings = [self.get_docstring_dict(each_name) for each_name in tool_names]
-        descriptions = [each_docstring["description"] for each_docstring in docstrings]
+        descriptions = [json.dumps(each_docstring, indent=4, sort_keys=True) for each_docstring in docstrings]
         embeddings = get_embeddings(descriptions)
         db.add_documents(tool_names, vectors=embeddings)
         db.save(database_path)
@@ -139,20 +140,25 @@ class ToolBox:
         properties = dict()
 
         if len(args_docstring) != len(arguments):
-            raise ValueError(f"Number of arguments in docstring ({len(args_docstring)}) does not match number of arguments in code ({len(arguments)})")
+            raise ToolCreationException(f"Number of arguments in docstring ({len(args_docstring)}) does not match number of arguments in code ({len(arguments)})")
 
         for (arg_name, arg_type), each_arg in zip(arguments, args_docstring, strict=True):
             arg_description = each_arg['description']
             if arg_description is None:
-                raise ValueError(f"Argument {arg_name} is missing a description")
+                raise ToolCreationException(f"Argument {arg_name} is missing a description")
 
             properties[arg_name] = {"description": arg_description, **ToolBox._type_to_schema(arg_type)}
 
-        assert self.get_name_from_code(code) == docstring_dict["name"]
+        if not self.get_name_from_code(code) == docstring_dict["name"]:
+            raise ToolCreationException(f"Tool name in code ({self.get_name_from_code(code)}) does not match tool name in docstring ({docstring_dict['name']})")
+
         positional_arguments_code = self.get_required_from_code(code)
         positional_arguments_json = [each_argument["name"] for each_argument in args_docstring if not each_argument["is_keyword_argument"]]
 
-        assert set(positional_arguments_code) == set(positional_arguments_json)
+        if not set(positional_arguments_code) == set(positional_arguments_json):
+            raise ToolCreationException(
+                f"Positional arguments in code ({positional_arguments_code}) do not match positional arguments in docstring ({positional_arguments_json})"
+            )
 
         return {
             "name": docstring_dict["name"],
