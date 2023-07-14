@@ -9,6 +9,7 @@ def get_wikipedia_info(wikipedia_page_name: str) -> str:
 
     Example:
         >>> get_wikipedia_info("Python (programming language)")
+        "Python is an interpreted, high-level, general-purpose programming language. Created by Guido van Rossum and [...]"
 
     Args:
         wikipedia_page_name (str): The title of the Wikipedia article from which the summary is to be retrieved.

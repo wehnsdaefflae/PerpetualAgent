@@ -1,0 +1,20 @@
+{
+    "name": "get_urls_from_google_query",
+    "summary": "Obtains a list of URLs corresponding to Google's search results for a given query.",
+    "description": "This function enables the automation of Google search results retrieval, particularly useful in building systems that need to analyze web content in response to diverse search queries.",
+    "args": [
+        {
+            "name": "search_query",
+            "python_type": "str",
+            "is_keyword_argument": false,
+            "description": "The search query to be submitted to Google.",
+            "default_value": null,
+            "example_value": "how to make a website"
+        }
+    ],
+    "return_value": {
+        "python_type": "list[str]",
+        "description": "A list of URLs returned from the Google search corresponding to the search query. In case of an error, the function returns a list containing a single string that details the error.",
+        "example_value": ["https://www.wikihow.com/Make-a-Website", "https://www.wix.com/website/builder", "https://www.websitebuilderexpert.com/building-websites/", "https://websitesetup.org/"]
+    }
+}

@@ -1,14 +1,13 @@
 # coding=utf-8
+import json
 import os
 import types
 from typing import Union
 import logging
 import ast
 import importlib.util
-import inspect
 
 import hyperdb
-from docstring_parser import parse, Docstring, DocstringStyle
 
 from utils.basic_llm_calls import get_embeddings
 from utils.logging_handler import logging_handlers
@@ -44,12 +43,21 @@ class ToolBox:
                                 f"Reinitializing database.")
 
         self.logger.info(f"Initializing database with {len(tool_names)} tools")
-        docstrings = [self.get_docstring_from_name(each_name) for each_name in tool_names]
-        embeddings = get_embeddings(docstrings)
+        docstrings = [self.get_docstring_dict(each_name) for each_name in tool_names]
+        descriptions = [each_docstring["description"] for each_docstring in docstrings]
+        embeddings = get_embeddings(descriptions)
         db.add_documents(tool_names, vectors=embeddings)
         db.save(database_path)
         return db
 
+    def get_docstring_file_from_name(self, tool_name: str) -> str:
+        return os.path.join(self.tool_folder, tool_name + ".json")
+    
+    def get_docstring_dict(self, tool_name: str) -> dict[str, any]:
+        schema_file = self.get_docstring_file_from_name(tool_name)
+        with open(schema_file, mode="r") as schema_file:
+            return json.load(schema_file)
+    
     def get_all_descriptions(self) -> list[str]:
         return [self.get_description_from_name(each_name) for each_name in self.get_all_tools()]
 
@@ -59,10 +67,11 @@ class ToolBox:
     def get_all_tools(self) -> dict[str, types.FunctionType]:
         functions = dict()
         for file_name in os.listdir(self.tool_folder):
-            if not file_name.endswith(".py") or file_name.startswith("_"):
+            each_name, extension = os.path.splitext(file_name)
+            docstring_file = self.get_docstring_file_from_name(each_name)
+            if not extension == ".py" or each_name.startswith("_") or not os.path.isfile(docstring_file):
                 continue
-            each_name = file_name[:-3]
-            specification = importlib.util.spec_from_file_location(each_name, location=os.path.join(self.tool_folder, file_name))
+            specification = importlib.util.spec_from_file_location(file_name, location=os.path.join(self.tool_folder, file_name))
             module = importlib.util.module_from_spec(specification)
             specification.loader.exec_module(module)
             functions[each_name] = getattr(module, each_name)
@@ -70,19 +79,20 @@ class ToolBox:
         self.logger.info(f"Loaded {len(functions)} tools from {self.tool_folder}")
         return functions
 
-    def _save_tool_code(self, code: str, is_temp: bool) -> None:
+    def _save_tool_code(self, code: str, docstring_dict: dict[str, any], is_temp: bool) -> None:
         tool_name = self.get_name_from_code(code)
-        name = "_tmp.py" if is_temp else f"{tool_name}.py"
-        self.logger.info(f"Saving tool {tool_name} to {name}")
-        with open(os.path.join(self.tool_folder, name), mode="w" if is_temp else "x") as file:
+        name = "_tmp" if is_temp else tool_name
+        self.logger.info(f"Saving tool {tool_name}...")
+        with open(os.path.join(self.tool_folder, name + ".py"), mode="w" if is_temp else "x") as file:
             file.write(code)
+        with open(os.path.join(self.tool_folder, name + ".json"), mode="w" if is_temp else "x") as file:
+            json.dump(docstring_dict, file, indent=4, sort_keys=True)
 
-    def save_tool_code(self, code: str, is_temp: bool) -> None:
-        self._save_tool_code(code, is_temp=is_temp)
+    def save_tool_code(self, code: str, docstring_dict: dict[str, any], is_temp: bool) -> None:
+        self._save_tool_code(code, docstring_dict, is_temp=is_temp)
         if not is_temp:
-            tool_description = self.get_docstring_description_from_code(code)
-            embedding, = get_embeddings([tool_description])
-            tool_name = self.get_name_from_code(code)
+            embedding, = get_embeddings([docstring_dict["description"]])
+            tool_name = docstring_dict["name"]
             self.vector_db.add_document(tool_name, embedding)
             self.vector_db.save(self.database_path)
 
@@ -121,95 +131,76 @@ class ToolBox:
 
         raise ValueError(f"Unsupported type: {t}")
 
-    def get_schema_from_code(self, code: str) -> dict[str, str]:
-        docstring = self.get_docstring_from_code(code)
-        parsed_doc = parse(docstring, style=DocstringStyle.GOOGLE)
-        args_section = parsed_doc.params
+    def get_schema_from_code(self, code: str, docstring_dict: dict[str, any]) -> dict[str, any]:
+        args_docstring = docstring_dict["args"]
 
-        tool = self.get_temp_tool_from_code(code)
+        tool = self.get_temp_tool_from_code(code, docstring_dict)
         arguments = tuple(each_argument for each_argument in tool.__annotations__.items() if each_argument[0] != 'return')
         properties = dict()
 
-        if len(args_section) != len(arguments):
-            print()
+        if len(args_docstring) != len(arguments):
+            raise ValueError(f"Number of arguments in docstring ({len(args_docstring)}) does not match number of arguments in code ({len(arguments)})")
 
-        for (arg_name, arg_type), each_arg in zip(arguments, args_section, strict=True):
-            arg_description = each_arg.description
-
+        for (arg_name, arg_type), each_arg in zip(arguments, args_docstring, strict=True):
+            arg_description = each_arg['description']
             if arg_description is None:
                 raise ValueError(f"Argument {arg_name} is missing a description")
 
             properties[arg_name] = {"description": arg_description, **ToolBox._type_to_schema(arg_type)}
 
-        schema = {
-            "name": self.get_name_from_code(code),
-            "description": self.get_docstring_description_from_code(code),
+        assert self.get_name_from_code(code) == docstring_dict["name"]
+        positional_arguments_code = self.get_required_from_code(code)
+        positional_arguments_json = [each_argument["name"] for each_argument in args_docstring if not each_argument["is_keyword_argument"]]
+
+        assert set(positional_arguments_code) == set(positional_arguments_json)
+
+        return {
+            "name": docstring_dict["name"],
+            "description": docstring_dict["description"],
             "parameters": {
                 "type": "object",
-                # "properties": {k: type_to_schema(v) for k, v in fun.__annotations__.items() if k != 'return'},
                 "properties": properties,
-                "required": self.get_required_from_code(code)
+                "required": positional_arguments_code
             }
         }
-
-        return schema
-
-    def get_docstring_from_tool(self, tool: types.FunctionType) -> Docstring:
-        tool_doc = inspect.getdoc(tool)
-        parsed_doc = parse(tool_doc, style=DocstringStyle.GOOGLE)
-        return parsed_doc
-
-    def get_docstring_from_code(self, code: str) -> str:
-        module = ast.parse(code)
-        for node in module.body:
-            if isinstance(node, ast.FunctionDef):
-                # noinspection PyTypeChecker
-                return ast.get_docstring(node)  # type documentation seems to be wrong here
-        raise ValueError("No docstring found in code.")
-
-    def get_docstring_description_from_name(self, name: str) -> str:
-        code = self.get_code_from_name(name)
-        return self.get_docstring_description_from_code(code)
-
-    def get_docstring_from_name(self, name: str) -> str:
-        code = self.get_code_from_name(name)
-        return self.get_docstring_from_code(code)
-
-    def get_description_from_docstring(self, docstring: str) -> str:
-        parsed_doc = parse(docstring)
-        tool_short_description = parsed_doc.short_description.removeprefix("\"\"\"").removesuffix("\"\"\"")
-        tool_long_description = parsed_doc.long_description.removeprefix("\"\"\"").removesuffix("\"\"\"")
-        if tool_long_description is None:
-            return tool_short_description
-        return (" ".join(tool_short_description.split("\n"))).removesuffix(".") + ". " + " ".join(tool_long_description.split("\n"))
-
-    def get_docstring_description_from_code(self, code: str) -> str:
-        tool_doc = self.get_docstring_from_code(code)
-        description = self.get_description_from_docstring(tool_doc)
-        return description
 
     def get_required_from_code(self, code: str) -> list[str]:
         module = ast.parse(code)
         for node in module.body:
             if isinstance(node, ast.FunctionDef):
                 arguments = node.args
-                return [arg.arg for arg in arguments.args]
+                arg_names = [arg.arg for arg in arguments.args]
+                default_values = node.args.defaults
+                num_kwargs = len(default_values)
+                if num_kwargs < 1:
+                    return arg_names
+                return arg_names[:-num_kwargs]
         return list()
 
-    def get_schema_from_name(self, name: str) -> dict[str, str]:
-        with open(os.path.join(self.tool_folder, f"{name}.py"), mode="r") as file:
-            return self.get_schema_from_code(file.read())
-
-    def get_schema_from_tool(self, tool: types.FunctionType) -> dict[str, any]:
-        # name = tool.__name__
-        # return self.get_schema_from_name(name)
-
-        code = self.get_code_from_tool(tool)
-        return self.get_schema_from_code(code)
+    def get_schema_from_name(self, name: str) -> dict[str, any]:
+        code = self.get_code_from_name(name)
+        docstring_dict = self.get_docstring_dict(name)
+        schema = self.get_schema_from_code(code, docstring_dict)
+        return schema
 
     def get_description_from_name(self, name: str) -> str:
         code = self.get_code_from_name(name)
-        return self.get_description_from_code(code)
+        signature = self.get_signature_from_code(code)
+        docstring_dict = self.get_docstring_dict(name)
+        summary = docstring_dict["summary"]
+        arguments = docstring_dict["args"]
+        example_arguments_str = ", ".join(
+            [
+                f"{each_arg['name']}=\"{each_arg['example_value']}\"" if each_arg["python_type"] == "str" else
+                f"{each_arg['name']}={each_arg['example_value']}"
+                for each_arg in arguments
+            ]
+        )
+
+        example_result = docstring_dict["return_value"]
+        example_result_str = "" if example_result["python_type"] == "None" else f", example result: {example_result['example_value']!r}"
+        example_str = "" if len(example_arguments_str) < 1 else f" example arguments: {example_arguments_str}"
+        return f"{name}{signature}: {summary}{example_str}{example_result_str}"
 
     def get_signature_from_code(self, code: str) -> str:
         name = self.get_name_from_code(code)
@@ -221,84 +212,10 @@ class ToolBox:
 
         raise ValueError(f"Could not find signature for tool {name}.")
 
-    def get_description_from_code(self, code: str) -> str:
-        name = self.get_name_from_code(code)
-        signature = self.get_signature_from_code(code)
-        docstring_description = self.get_docstring_description_from_code(code)
-        example_arguments = self.get_example_arguments_from_code(code)
-        example_arguments_str = ", ".join(
-            [
-                f"{each_key}=\"{each_value}\"" if isinstance(each_value, str) else
-                f"{each_key}={each_value}"
-                for each_key, each_value in example_arguments.items()
-            ]
-        )
-
-        example_str = "" if len(example_arguments_str) < 1 else f" Example arguments: {example_arguments_str}"
-        return f"{name}{signature}: {docstring_description}{example_str}"
-
-    def get_example_arguments_from_code(self, tool_source: str) -> dict[str, any]:
-        module = ast.parse(tool_source)
-        for node in module.body:
-            if isinstance(node, ast.FunctionDef):
-                func_def = node
-                break
-        else:
-            raise ValueError(f"The first node is not a function definition.")
-
-        docstring = self.get_docstring_from_code(tool_source)
-        for each_line in docstring.split("\n"):
-            each_line_stripped = each_line.strip()
-            if each_line_stripped.startswith(">>> "):
-                call_str = each_line_stripped.removeprefix(">>> ")
-                break
-        else:
-            raise ValueError(f"No example call found in docstring for tool '{func_def.name}'.")
-
-        parsed_call = ast.parse(call_str)
-
-        for each_node in ast.walk(parsed_call):
-            if isinstance(each_node, ast.Call) and isinstance(each_node.func, ast.Name) and each_node.func.id == func_def.name:
-                function_call_node = each_node
-                break
-        else:
-            raise ValueError(f"The example call in the docstring for tool '{func_def.name}' is not a function call.")
-
-        # Extract function definition arguments
-        function_def_args = func_def.args
-
-        # Extract function call arguments
-        function_call_args = function_call_node.args
-        function_call_keywords = function_call_node.keywords
-
-        # Map the call arguments to their respective names
-        arg_names_values = dict()
-
-        # Positional arguments
-        for i, arg in enumerate(function_call_args):
-            arg_names_values[function_def_args.args[i].arg] = ast.literal_eval(arg)
-
-        # Keyword arguments
-        for kwarg in function_call_keywords:
-            arg_names_values[kwarg.arg] = ast.literal_eval(kwarg.value)
-
-        # Default values for missing keyword arguments
-        for i, default_arg in enumerate(function_def_args.defaults):
-            default_arg_name = function_def_args.args[len(function_call_args) + i].arg
-            if default_arg_name not in arg_names_values:
-                arg_names_values[default_arg_name] = ast.literal_eval(default_arg)
-
-        return arg_names_values
-
     def get_name_from_code(self, code: str) -> str:
         for each_node in ast.walk(ast.parse(code)):
             if isinstance(each_node, ast.FunctionDef):
                 return each_node.name
-
-    def get_code_from_tool(self, tool: types.FunctionType) -> str:
-        file = inspect.getfile(tool)
-        with open(file, mode="r") as file:
-            return file.read()
 
     def get_tool_from_name(self, name: str) -> types.FunctionType:
         all_tools = self.get_all_tools()
@@ -308,8 +225,8 @@ class ToolBox:
         with open(os.path.join(self.tool_folder, f"{name}.py"), mode="r") as file:
             return file.read()
 
-    def get_temp_tool_from_code(self, code: str) -> types.FunctionType:
-        self.save_tool_code(code, True)
+    def get_temp_tool_from_code(self, code: str, docstring_dict: dict[str, any]) -> types.FunctionType:
+        self.save_tool_code(code, docstring_dict, True)
         name = self.get_name_from_code(code)
         specification = importlib.util.spec_from_file_location(name, location=os.path.join(self.tool_folder, "_tmp.py"))
         module = importlib.util.module_from_spec(specification)

@@ -1,0 +1,28 @@
+{
+    "name": "create_file",
+    "summary": "Creates and populates a text file with the given content.",
+    "description": "This function dynamically generates a text file with a specified name and writes provided content into it. It's useful in situations where there's a need to generate text-based files dynamically, such as creating configuration files, generating reports, or storing data in simple formats like CSV or JSON.",
+    "args": [
+        {
+            "name": "file_name",
+            "python_type": "str",
+            "is_keyword_argument": false,
+            "description": "The complete file path and name of the file to be created. It includes both the directory path and the filename.",
+            "default_value": null,
+            "example_value": "example.txt"
+        },
+        {
+            "name": "content",
+            "python_type": "str",
+            "is_keyword_argument": false,
+            "description": "The string content that will be written into the file.",
+            "default_value": null,
+            "example_value": "Sample text content"
+        }
+    ],
+    "return_value": {
+        "python_type": "None",
+        "description": "This function doesn't return anything. It performs an action by creating and populating a file with the given content.",
+        "example_value": null
+    }
+}

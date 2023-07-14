@@ -1,0 +1,20 @@
+{
+    "name": "calculate",
+    "summary": "Performs arithmetic operations on a given mathematical expression string.",
+    "description": "This function takes a string representation of a mathematical expression that follows Python syntax. It handles numbers and various arithmetic operators such as addition (+), subtraction (-), multiplication (*), division (/), and exponentiation (**). It evaluates the expression and returns the result as a string. In case of evaluation failure due to incorrect syntax or undefined operations, it returns an error message.",
+    "args": [
+        {
+            "name": "what",
+            "python_type": "str",
+            "is_keyword_argument": false,
+            "description": "A string representing a mathematical expression conforming to Python syntax.",
+            "default_value": null,
+            "example_value": "2 + 3 * 4"
+        }
+    ],
+    "return_value": {
+        "python_type": "str",
+        "description": "The result of the evaluated expression. If the evaluation is unsuccessful, an error message will be returned.",
+        "example_value": "14"
+    }
+}

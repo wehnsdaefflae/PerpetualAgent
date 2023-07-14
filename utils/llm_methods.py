@@ -262,9 +262,9 @@ class LLMMethods(ABC):
             f"# Instructions\n"
             f"Think step-by-step: Given the progress report above, what conclusions do you draw regarding the request? What would be a computer's next action in order "
             f"to fulfill the request? Provide a one-sentence command in natural language for a single simple action towards fulfilling the request at hand.\n"
-            # "If the previous action has failed according to the progress report, do not instruct the exact same action again but instead retry variants "
-            # "once or twice. If variants of the action fail as well, try a whole different approach instead.\n"
-            # "\n"
+            f"\n"
+            f"Consider your limited memory and store / retrieve relevant information from previous steps.\n"
+            f"\n"
             f"Check thoroughly if the request is _already_ fulfilled according to the progress report. In this case respond only with \"[FINALIZE]\".")
         response = LLMMethods.respond(prompt, list(), function_id="sample_next_step_summary", **parameters)
         return response.strip()

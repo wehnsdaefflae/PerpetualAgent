@@ -1,0 +1,20 @@
+{
+    "name": "get_wikipedia_info",
+    "summary": "Retrieves a summary of a specified Wikipedia page.",
+    "description": "This function fetches a concise summary of a desired Wikipedia article, given its title. If the specified article leads to a disambiguation page, the function returns a list of potential options for the user to further specify their search. In case the specified page does not exist, it either suggests a similar existing page or alerts the user if there's no related page available.",
+    "args": [
+        {
+            "name": "wikipedia_page_name",
+            "python_type": "str",
+            "is_keyword_Argument": false,
+            "description": "The title of the Wikipedia article from which the summary is to be retrieved.",
+            "default_value": null,
+            "example_value": "Python (programming language)"
+        }
+    ],
+    "return_value": {
+        "python_type": "str",
+        "description": "A string containing the summary of the Wikipedia page if it exists. If the specified page leads to a disambiguation page, a list of potential matches is returned. In the event that the page does not exist, the function either suggests a similar page or notifies the user if no suitable alternative can be found.",
+        "example_value": "Python is an interpreted, high-level, general-purpose programming language. Created by Guido van Rossum and [...]"
+    }
+}

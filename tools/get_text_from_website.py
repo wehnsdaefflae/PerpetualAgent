@@ -9,21 +9,6 @@ from tools.summarize_text import summarize_text
 
 
 def get_text_from_website(url: str, len_summary: int | None = None) -> str:
-    """Obtains and optionally condenses the visible text content from a given URL, providing a summary of the webpage's content.
-
-    This function retrieves and provides a summary of the visible text content from a specified URL. The user can define the length of the summary, making it ideal for applications requiring a succinct overview of a webpage's content without manual browsing, or when only a brief summary is required.
-
-    Example:
-        >>> get_text_from_website("https://en.wikipedia.org/wiki/Paris", len_summary=500)
-
-    Args:
-        url (str): The URL of the webpage from which to extract text.
-        len_summary (int, optional): The length of the desired summary in characters. If this parameter is not provided, the function returns the full text.
-
-    Returns:
-        str: The visible text content or its condensed summary from the given URL, based on the provided parameters.
-    """
-
     driver = webdriver.Chrome()
     # driver = webdriver.Chrome(executable_path=ChromeDriverManager().install())
     driver.get(url)

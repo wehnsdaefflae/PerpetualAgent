@@ -95,11 +95,12 @@ docstring_schema = {
                 "type": "string"
             },
             "summary": {
-                "description": "A one sentence summary of the function.",
+                "description": "A one sentence summary of the function without mentioning the name of the function.",
                 "type": "string"
             },
             "description": {
-                "description": "A brief explanation of the function. It should be a clear, concise overview of what the function does.",
+                "description": "A brief explanation of the function without mentioning the name of the function. It should be a clear, concise overview of what the "
+                               "function does.",
                 "type": "string"
             },
             "args": {
@@ -116,23 +117,22 @@ docstring_schema = {
                             "description": "The type of the argument.",
                             "type": "string"
                         },
-                        "argument_passing_style": {
-                            "description": "The passing style of the argument. `positional` if the argument is positional, `keyword` if the argument is optional.",
-                            "type": "string",
-                            "enum": ["positional", "keyword"]
+                        "is_keyword_argument": {
+                            "description": "`True` if the argument is a keyword argument, `False` if it is a positional argument.",
+                            "type": "boolean"
                         },
                         "description": {
                             "description": "A description of the argument without the default value.",
                             "type": "string"
                         },
                         "default_value": {
-                            "description": "Not set for positional arguments. The default value of the keyword argument. `None` if optional."
+                            "description": "The default value of the keyword argument. `None` if optional. Not set for positional arguments."
                         },
                         "example_value": {
                             "description": "An example value for the argument.",
                         }
                     },
-                    "required": ["name", "type", "arg_type", "description", "example_value"]
+                    "required": ["name", "python_type", "is_keyword_argument", "description", "example_value"]
                 }
             },
             "return_value": {

@@ -1,0 +1,20 @@
+{
+    "name": "get_scientific_research_articles",
+    "summary": "Fetches a list of scientific research articles from Semantic Scholar API based on a provided search query.",
+    "description": "This function retrieves a list of scientific research articles based on a provided search query related to any scientific topic or keywords. The query searches the Semantic Scholar API database and returns detailed information about each found article. It is useful for users seeking detailed insights on research articles concerning a specific subject.",
+    "args": [
+        {
+            "name": "query",
+            "python_type": "str",
+            "is_keyword_argument": false,
+            "description": "A string containing the topic or keywords to search for in the scientific articles database.",
+            "default_value": null,
+            "example_value": "Artificial Intelligence"
+        }
+    ],
+    "return_value": {
+        "python_type": "list[dict[str, str]]",
+        "description": "Returns a list of dictionaries where each dictionary contains detailed information about a particular article. Each dictionary includes the key 'title' for the title of the article, and 'paperID' for the Google Scholar ID of the article. If no articles are found, the function returns an empty list.",
+        "example_value": "[{'title': 'Artificial Intelligence', 'paperId': '10.1016/0004-3702(70)90007-8'}, {'title': 'AI', 'paperId': '10.1016/0004-3702(73)90007-4'}, {'title': 'Computer Brains', 'paperId': '10.1016/0004-3702(74)90007-9'}]"
+    }
+}

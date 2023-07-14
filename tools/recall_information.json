@@ -1,0 +1,20 @@
+{
+    "name": "recall_information",
+    "summary": "Recalls information from a file.",
+    "description": "This function recalls information in a file. It is useful to recall large amounts of information that have been stored to memory previously.",
+    "args": [
+        {
+            "name": "file_name",
+            "python_type": "str",
+            "is_keyword_argument": false,
+            "description": "A string representing the name of the file where the information was stored.",
+            "default_value": null,
+            "example_value": "000041.txt"
+        }
+    ],
+    "return_value": {
+        "python_type": "str",
+        "description": "A string representing the information that was stored in the file.",
+        "example_value": "Four score and seven years ago our fathers brought forth, upon this continent, a new nation, conceived in liberty, and dedicated to the proposition that all men are created equal. [...]"
+    }
+}

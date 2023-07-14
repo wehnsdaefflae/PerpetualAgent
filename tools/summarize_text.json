@@ -1,0 +1,34 @@
+{
+    "name": "summarize_text",
+    "summary": "Generates a concise summary of the provided text based on the specified length and focus.",
+    "description": "This function aims to summarize any given text based on a user-specified character count and, if provided, a specific area of focus. It can be particularly useful in contexts such as academic research for generating paper abstracts, journalism for summarizing news articles, or data analysis where distilling lengthy reports into compact summaries is beneficial.",
+    "args": [
+        {
+            "name": "text",
+            "python_type": "str",
+            "is_keyword_argument": false,
+            "description": "The original text to be summarized.",
+            "example_value": "Paris is the capital and most populous city of France."
+        },
+        {
+            "name": "len_summary",
+            "python_type": "int",
+            "is_keyword_argument": false,
+            "description": "The desired character count for the summary. The summary's length will not exceed this value.",
+            "example_value": 500
+        },
+        {
+            "name": "focus",
+            "python_type": "str | None",
+            "is_keyword_argument": true,
+            "description": "A keyword or topic that should be emphasized in the summary. If no focus is provided, the summary will be generated based on the overall content.",
+            "default_value": null,
+            "example_value": "population"
+        }
+    ],
+    "return_value": {
+        "python_type": "str",
+        "description": "A succinct and focused summary of the input text, constructed to adhere to the user-specified length and focus constraints.",
+        "example_value": "Paris is the capital of France."
+    }
+}

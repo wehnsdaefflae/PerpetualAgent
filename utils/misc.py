@@ -162,23 +162,23 @@ class DocstringData:
     return_value: ReturnValue
 
 
-def compose_docstring(docstring_data: DocstringData) -> str:
-    args_positional = [each_arg for each_arg in docstring_data.args if each_arg.argument_passing_style == PassingStyle.POSITIONAL.value]
-    args_keyword = [each_arg for each_arg in docstring_data.args if each_arg.argument_passing_style == PassingStyle.KEYWORD.value]
+def compose_docstring(docstring_data: dict[str, any]) -> str:
+    args_positional = [each_arg for each_arg in docstring_data["args"] if not each_arg["is_keyword_argument"]]
+    args_keyword = [each_arg for each_arg in docstring_data["args"] if each_arg["is_keyword_argument"]]
 
     arg_lines = list()
     for each_arg in args_positional:
-        one_line_description = " ".join(each_arg.description.splitlines())
-        each_line = f"{each_arg.name.strip()} ({each_arg.python_type.strip()}): {one_line_description}"
+        one_line_description = " ".join(each_arg["description"].splitlines())
+        each_line = f"{each_arg['name'].strip()} ({each_arg['python_type'].strip()}): {one_line_description}"
         arg_lines.append("    " + each_line.strip())
 
     for each_kwarg in args_keyword:
-        each_line = f"{each_kwarg.name.strip()} "
-        one_line_description = " ".join(each_kwarg.description.splitlines())
+        each_line = f"{each_kwarg['name'].strip()} "
+        one_line_description = " ".join(each_kwarg['description'].splitlines())
         if each_kwarg.default_value is None:
-            each_line += f"(Optional[{each_kwarg.python_type.strip()}]): {one_line_description}"
+            each_line += f"(Optional[{each_kwarg['python_type'].strip()}]): {one_line_description}"
         else:
-            each_line += f"({each_kwarg.python_type.strip()}): {one_line_description.removesuffix('.')}. Defaults to {each_kwarg.default_value!r}."
+            each_line += f"({each_kwarg['python_type'].strip()}): {one_line_description.removesuffix('.')}. Defaults to {each_kwarg['default_value']!r}."
         arg_lines.append("    " + each_line.strip())
 
     if len(arg_lines) < 1:
@@ -187,29 +187,29 @@ def compose_docstring(docstring_data: DocstringData) -> str:
         args_str = "\n".join(arg_lines)
 
     example_args = ", ".join(
-        [f"{each_arg.example_value!r}" for each_arg in args_positional] +
-        [f"{each_kwarg.name}={each_kwarg.example_value!r}" for each_kwarg in args_keyword]
+        [f"{each_arg['example_value']!r}" for each_arg in args_positional] +
+        [f"{each_kwarg['name']}={each_kwarg['example_value']!r}" for each_kwarg in args_keyword]
     )
 
-    if docstring_data.return_value.python_type == "None":
+    return_value = docstring_data["return_value"]
+    if return_value['python_type'] == "None":
         example_return_str = ""
         return_str = "None"
     else:
-        return_value = docstring_data.return_value
-        example_return_str = f"    {return_value.example_value!r}\n"
-        one_line_description = ' '.join(return_value.description.splitlines())
-        return_str = f"{return_value.python_type}: {one_line_description}"
+        example_return_str = f"    {return_value['example_value']!r}\n"
+        one_line_description = ' '.join(return_value['description'].splitlines())
+        return_str = f"{return_value['python_type']}: {one_line_description}"
 
     return (
-        f"{' '.join(docstring_data.summary.splitlines())}\n"
+        f"{' '.join(docstring_data['summary'].splitlines())}\n"
         f"\n"
-        f"{' '.join(docstring_data.description.splitlines())}\n"
+        f"{' '.join(docstring_data['description'].splitlines())}\n"
         f"\n"
         f"Args:\n"
         f"{args_str}\n"
         f"\n"
         f"Example:\n"
-        f"    >>> {docstring_data.name}({example_args})\n"
+        f"    >>> {docstring_data['name']}({example_args})\n"
         f"{example_return_str}"
         f"\n"
         f"Returns:\n"

@@ -1,0 +1,26 @@
+{
+    "name": "get_weather",
+    "summary": "Retrieves current weather information for a specified city and country using Google's weather service.",
+    "description": "This function obtains the latest weather conditions for any city-country combination, provided that Google offers weather data for the specified location. It is designed to be universally applicable across all supported locales.",
+    "args": [
+        {
+            "name": "city",
+            "python_type": "str",
+            "is_keyword_argument": false,
+            "description": "The city for which the weather conditions are to be retrieved.",
+            "example_value": "London"
+        },
+        {
+            "name": "country",
+            "python_type": "str",
+            "is_keyword_argument": false,
+            "description": "The country in which the specified city is situated.",
+            "example_value": "United Kingdom"
+        }
+    ],
+    "return_value": {
+        "python_type": "str",
+        "description": "A comprehensive string detailing the current weather conditions in the given city, using data from Google's weather service.",
+        "example_value": "The weather in London, United Kingdom is 14 degrees Celsius and partly cloudy. The wind is blowing at [...]"
+    }
+}

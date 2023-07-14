@@ -1,0 +1,28 @@
+{
+    "name": "get_text_from_website",
+    "summary": "Obtains and optionally condenses the visible text content from a given URL.",
+    "description": "This function retrieves and provides a summary of the visible text content from a specified URL. The user can define the length of the summary, making it ideal for applications requiring a succinct overview of a webpage's content without manual browsing, or when only a brief summary is required.",
+    "args": [
+        {
+            "name": "url",
+            "python_type": "str",
+            "is_keyword_argument": false,
+            "description": "The URL of the webpage from which to extract text.",
+            "default_value": null,
+            "example_value": "https://en.wikipedia.org/wiki/Paris"
+        },
+        {
+            "name": "len_summary",
+            "python_type": "int",
+            "is_keyword_argument": true,
+            "description": "The length of the desired summary in characters. If this parameter is not provided, the function returns the full text.",
+            "default_value": null,
+            "example_value": 500
+        }
+    ],
+    "return_value": {
+        "python_type": "str",
+        "description": "The visible text content or its condensed summary from the given URL, based on the provided parameters.",
+        "example_value": "Paris (French pronunciation: ​[paʁi] (About this soundlisten)) is the capital and most populous city of France, with [...]"
+    }
+}
