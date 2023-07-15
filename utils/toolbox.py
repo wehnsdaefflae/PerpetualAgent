@@ -11,6 +11,7 @@ import hyperdb
 
 from utils.basic_llm_calls import get_embeddings
 from utils.logging_handler import logging_handlers
+from utils.misc import compose_docstring
 
 
 class SchemaExtractionException(Exception):
@@ -48,7 +49,7 @@ class ToolBox:
 
         self.logger.info(f"Initializing database with {len(tool_names)} tools")
         docstrings = [self.get_docstring_dict(each_name) for each_name in tool_names]
-        descriptions = [json.dumps(each_docstring, indent=4, sort_keys=True) for each_docstring in docstrings]
+        descriptions = [compose_docstring(each_docstring) for each_docstring in docstrings]
         embeddings = get_embeddings(descriptions)
         db.add_documents(tool_names, vectors=embeddings)
         db.save(database_path)
@@ -95,7 +96,8 @@ class ToolBox:
     def save_tool_code(self, code: str, docstring_dict: dict[str, any], is_temp: bool) -> None:
         self._save_tool_code(code, docstring_dict, is_temp=is_temp)
         if not is_temp:
-            embedding, = get_embeddings([docstring_dict["description"]])
+            docstring = compose_docstring(docstring_dict)
+            embedding, = get_embeddings([docstring])
             tool_name = docstring_dict["name"]
             self.vector_db.add_document(tool_name, embedding)
             self.vector_db.save(self.database_path)

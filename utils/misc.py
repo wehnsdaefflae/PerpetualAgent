@@ -90,10 +90,14 @@ def compose_docstring(docstring_data: dict[str, any]) -> str:
     for each_kwarg in args_keyword:
         each_line = f"{each_kwarg['name'].strip()} "
         one_line_description = " ".join(each_kwarg['description'].splitlines())
+        if ". Default" not in one_line_description:
+            one_line_description = f"{one_line_description.removesuffix('.')}. Defaults to {each_kwarg['default_value']!r}."
+
         if each_kwarg["default_value"] is None:
             each_line += f"(Optional[{each_kwarg['python_type'].strip()}]): {one_line_description}"
         else:
-            each_line += f"({each_kwarg['python_type'].strip()}): {one_line_description.removesuffix('.')}. Defaults to {each_kwarg['default_value']!r}."
+            each_line += f"({each_kwarg['python_type'].strip()}): {one_line_description}"
+
         arg_lines.append("    " + each_line.strip())
 
     if len(arg_lines) < 1:

@@ -144,7 +144,8 @@ class StepProcessor:
         except Exception as e:
             return ToolResult("[action_selection_failed]", f"{e}", False)
 
-        tool_name = LLMMethods.select_tool_name(self.toolbox, json.dumps(docstring_dict, indent=4, sort_keys=True))
+        docstring = compose_docstring(docstring_dict)
+        tool_name = LLMMethods.select_tool_name(self.toolbox, docstring)
         if tool_name is None:
             print(f"{colorama.Back.RED}{colorama.Style.BRIGHT}New tool:{colorama.Style.RESET_ALL}")
             tool_result = self._apply_new_tool(progress_report, docstring_dict)
@@ -228,8 +229,8 @@ class PerpetualAgent:
 
             last_progress_dict = LLMMethods.openai_extract_arguments(summary, progress_schema)
             last_progress = last_progress_dict["updated_progress"]
-            last_tool_was_effective = last_progress_dict["was_last_action_effective"]
             if i >= 2:
+                last_tool_was_effective = last_progress_dict["was_last_action_effective"]
                 self.toolbox.update_tool_stats(last_tool_call, last_tool_was_effective)
 
             last_tool_call = tool_result.tool_call

@@ -100,7 +100,7 @@ progress_schema = {  # prompt requires: request, progress, last_action, last_res
                 "type": "boolean"
             }
         },
-        "required": ["updated_progress_report", "was_last_action_effective"]
+        "required": ["updated_progress", "was_last_action_effective"]
     }
 }
 
