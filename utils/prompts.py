@@ -33,7 +33,7 @@ PROGRESS_UPDATER = (
     f"and everyone accepted the invitation for lunch.\n"
     f"<! -- END EXAMPLE -->\n"
     f"\n"
-    f"{PROGRESS_REPORT}\n"
+    f"{{PROGRESS_REPORT}}\n"
     f"\n"
     f"## Updated progress report"
 )

@@ -8,13 +8,13 @@ from traceback import format_exc
 import colorama
 
 from utils.basic_llm_calls import openai_chat
-from utils.json_schemata import docstring_schema
+from utils.json_schemata import docstring_schema, progress_schema
 from utils.llm_methods import LLMMethods, ExtractionException
-from utils.prompts import CODER, STEP_SUMMARIZER
+from utils.prompts import CODER
 from utils.logging_handler import logging_handlers
 from utils.misc import truncate, extract_code_blocks, insert_docstring, compose_docstring
 from utils.prompts import PROGRESS_UPDATER, PROGRESS_REPORT
-from utils.toolbox import ToolBox
+from utils.toolbox import ToolBox, SchemaExtractionException
 
 
 class ToolCreationException(Exception):
@@ -61,7 +61,7 @@ class StepProcessor:
             raise ToolCreationException("Error while extracting tool code.") from e
 
     def _confirmation(self, tool_call: str) -> bool:
-        response = input(f"{tool_call}{colorama.Style.RESET_ALL} [y/N]: ")
+        response = input(f"{colorama.Fore.RED}{tool_call}{colorama.Style.RESET_ALL} [y/N]: ")
         return "y" == response.lower().strip()
 
     def _apply_tool(self, tool: types.FunctionType, arguments: dict[str, any], is_temp_tool: bool) -> ToolResult:
@@ -103,19 +103,23 @@ class StepProcessor:
                 new_tool_code = self._make_code(message_history, docstring_dict)
                 new_tool_code = insert_docstring(new_tool_code, docstring)
                 tmp_tool = self.toolbox.get_temp_tool_from_code(new_tool_code, docstring_dict)
-                tool_schema = self.toolbox.get_schema_from_code(new_tool_code, docstring_dict)
 
             except ToolCreationException as e:
                 self.logger.error(e)
-                print(colorama.Style.RESET_ALL)
                 return ToolResult("[tool_creation_failed]", f"{e.__cause__ if e.__cause__ else e}", False)
+
+            try:
+                tool_schema = self.toolbox.get_schema_from_code(new_tool_code, docstring_dict)
+
+            except SchemaExtractionException as e:
+                self.logger.error(e)
+                return ToolResult("[schema_extraction_failed]", f"{e}", False)
 
             try:
                 arguments = LLMMethods.openai_extract_arguments(text, tool_schema, model="gpt-3.5-turbo-0613")
 
             except ExtractionException as e:
                 self.logger.error(e)
-                print(colorama.Style.RESET_ALL)
                 return ToolResult("[argument_extraction_failed]", f"{e.__cause__ if e.__cause__ else e}", False)
 
             tool_result = self._apply_tool(tmp_tool, arguments, True)
@@ -142,11 +146,11 @@ class StepProcessor:
 
         tool_name = LLMMethods.select_tool_name(self.toolbox, json.dumps(docstring_dict, indent=4, sort_keys=True))
         if tool_name is None:
-            print(f"{colorama.Fore.BLACK}{colorama.Back.RED}{colorama.Style.BRIGHT}New tool: ", end="")
+            print(f"{colorama.Back.RED}{colorama.Style.BRIGHT}New tool:{colorama.Style.RESET_ALL}")
             tool_result = self._apply_new_tool(progress_report, docstring_dict)
 
         else:
-            print(f"{colorama.Fore.RED}Tool: ", end="")
+            print(f"{colorama.Back.RED}Tool:{colorama.Style.RESET_ALL}")
             tool = self.toolbox.get_tool_from_name(tool_name)
             tool_schema = self.toolbox.get_schema_from_name(tool_name)
             arguments = LLMMethods.openai_extract_arguments(progress_report, tool_schema, model="gpt-3.5-turbo")
@@ -174,79 +178,59 @@ class PerpetualAgent:
         summary_length_limit = 5_000
 
         i = 1
-        full_report = {
-            "request": main_request,
-            "progress": None,
-            "last_action": None,
-            "last_result": None,
-        }
-        update_info = {
-            "updated_progress": None,
-            "action_helpful": False,
-        }
-        progress = "[no steps performed yet]"
         last_progress = "[no progress yet]"
         last_tool_call = "[no action yet]"
         last_tool_result = "[no result yet]"
         while True:
             # "gpt-3.5-turbo-16k-0613", "gpt-4-32k-0613", "gpt-4-0613", "gpt-3.5-turbo-0613"
 
-            output_step = f"Step {i}:"
-            print(output_step)
+            print(f"Step {i}:\n")
+
+            print(
+                f"{colorama.Back.CYAN}Progress:{colorama.Style.RESET_ALL}\n"
+                f"{colorama.Fore.CYAN}{last_progress.strip()}{colorama.Style.RESET_ALL}\n"
+            )
+
+            summary = PROGRESS_REPORT.format(
+                request=improved_request.strip(),
+                progress=last_progress.strip(),
+                action=last_tool_call.strip(),
+                result=last_tool_result.strip(),
+            )
 
             if i < 2:
-                print(f"{colorama.Fore.CYAN}First step.")
-                summary = (
-                    f"## Request\n"
-                    f"{improved_request.strip()}"
-                )
-                # use improved_request as the first step
-                action = LLMMethods.sample_first_action(improved_request, model="gpt-3.5-turbo")
-
+                action = LLMMethods.sample_first_action(summary, model="gpt-3.5-turbo")
             else:
-                print(f"{colorama.Fore.CYAN}Progress: {progress.strip()}")
-                summary = PROGRESS_REPORT.format(
-                    request=improved_request.strip(),
-                    progress=last_progress.strip(),
-                    action=last_tool_call.strip(),
-                    result=last_tool_result.strip(),
-                )
-
-                action = LLMMethods.sample_next_action(summary, model="gpt-4")
+                action = LLMMethods.sample_next_action(summary, model="gpt-3.5-turbo")
 
             self.main_logger.info(action)
-            print(f"{colorama.Fore.YELLOW}Action: {action.strip()}")
+            print(
+                f"{colorama.Back.YELLOW}Action:{colorama.Style.RESET_ALL}\n"
+                f"{colorama.Fore.YELLOW}{action}{colorama.Style.RESET_ALL}\n"
+            )
 
             if "[finalize]" in action.lower():
-                self.main_logger.info(f"Request fulfilled: {progress}")
-                print(colorama.Style.RESET_ALL)
-                return progress
+                self.main_logger.info(f"Request fulfilled: {last_progress}")
+                return last_progress
 
             tool_result = self.processor.perform(action, summary)  # literal action description
-            print(f"{colorama.Fore.BLUE}Result: {truncate(tool_result.result, 200)}{colorama.Style.RESET_ALL}\n")
+            print(
+                f"{colorama.Back.BLUE}Result ({'succeeded' if tool_result.succeeded else 'failed'}):{colorama.Style.RESET_ALL}\n"
+                f"{colorama.Fore.BLUE}{truncate(tool_result.result, 200)}{colorama.Style.RESET_ALL}\n"
+            )
 
             print("====================================\n")
 
-            if i < 2:
-                update_progress_prompt = STEP_SUMMARIZER.format(
-                    request=improved_request.strip(),
-                    action=tool_result.tool_call.strip(),
-                    result=tool_result.result.strip())
+            """
+            update_progress_prompt = PROGRESS_UPDATER.format(PROGRESS_REPORT=summary)
+            last_progress = LLMMethods.respond(update_progress_prompt, list(), function_id="update_progress", model="gpt-3.5-turbo")
+            """
 
-            else:
-                update_progress_prompt = PROGRESS_UPDATER.format(
-                    request=improved_request.strip(),
-                    progress=progress.strip(),
-                    action=tool_result.tool_call.strip(),
-                    result=tool_result.result.strip())
-
-            last_progress = progress
-
-            progress = LLMMethods.respond(update_progress_prompt, list(), function_id="summarize", model="gpt-3.5-turbo")
-            # incorporate last_action and last_result into progress
-            # evaluate success of action (via result)
-            # make action last_action and result last_result
-            self.main_logger.info(progress)
+            last_progress_dict = LLMMethods.openai_extract_arguments(summary, progress_schema)
+            last_progress = last_progress_dict["updated_progress"]
+            last_tool_was_effective = last_progress_dict["was_last_action_effective"]
+            if i >= 2:
+                self.toolbox.update_tool_stats(last_tool_call, last_tool_was_effective)
 
             last_tool_call = tool_result.tool_call
             last_tool_result = tool_result.result

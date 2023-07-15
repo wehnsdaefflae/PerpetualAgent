@@ -84,6 +84,26 @@ get_intermediate_results = {
     }
 }
 
+progress_schema = {  # prompt requires: request, progress, last_action, last_result
+    "name": "update_progress_report",
+    "description": "Gradually updates the current progress towards fulfilling the request with the action and the result from the last step.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "updated_progress": {
+                "description": "Updated version of the current progress towards the request with the action and result from the last step incorporated.",
+                "type": "string"
+            },
+            "was_last_action_effective": {
+                "description": "'True' if the last action contributed to fulfilling the request. 'False' if its execution did not result in any progress towards fulfilling "
+                               "the request or if no action has been executed.",
+                "type": "boolean"
+            }
+        },
+        "required": ["updated_progress_report", "was_last_action_effective"]
+    }
+}
+
 docstring_schema = {
     "name": "make_docstring",
     "description": "Generates a Google style docstring for a given function.",

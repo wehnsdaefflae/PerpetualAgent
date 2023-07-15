@@ -11,7 +11,10 @@ import hyperdb
 
 from utils.basic_llm_calls import get_embeddings
 from utils.logging_handler import logging_handlers
-from utils.perpetual_agent import ToolCreationException
+
+
+class SchemaExtractionException(Exception):
+    pass
 
 
 class ToolBox:
@@ -140,23 +143,23 @@ class ToolBox:
         properties = dict()
 
         if len(args_docstring) != len(arguments):
-            raise ToolCreationException(f"Number of arguments in docstring ({len(args_docstring)}) does not match number of arguments in code ({len(arguments)})")
+            raise SchemaExtractionException(f"Number of arguments in docstring ({len(args_docstring)}) does not match number of arguments in code ({len(arguments)})")
 
         for (arg_name, arg_type), each_arg in zip(arguments, args_docstring, strict=True):
             arg_description = each_arg['description']
             if arg_description is None:
-                raise ToolCreationException(f"Argument {arg_name} is missing a description")
+                raise SchemaExtractionException(f"Argument {arg_name} is missing a description")
 
             properties[arg_name] = {"description": arg_description, **ToolBox._type_to_schema(arg_type)}
 
         if not self.get_name_from_code(code) == docstring_dict["name"]:
-            raise ToolCreationException(f"Tool name in code ({self.get_name_from_code(code)}) does not match tool name in docstring ({docstring_dict['name']})")
+            raise SchemaExtractionException(f"Tool name in code ({self.get_name_from_code(code)}) does not match tool name in docstring ({docstring_dict['name']})")
 
         positional_arguments_code = self.get_required_from_code(code)
         positional_arguments_json = [each_argument["name"] for each_argument in args_docstring if not each_argument["is_keyword_argument"]]
 
         if not set(positional_arguments_code) == set(positional_arguments_json):
-            raise ToolCreationException(
+            raise SchemaExtractionException(
                 f"Positional arguments in code ({positional_arguments_code}) do not match positional arguments in docstring ({positional_arguments_json})"
             )
 
@@ -238,3 +241,28 @@ class ToolBox:
         module = importlib.util.module_from_spec(specification)
         specification.loader.exec_module(module)
         return getattr(module, name)
+
+    def update_tool_stats(self, tool_call: str, tool_was_effective: bool) -> None:
+        stats_file = self.tool_folder + "_stats.json"
+        split_call = tool_call.split("(", maxsplit=1)[0]
+        if split_call not in self.get_all_tools():
+            self.logger.warning(f"Could not find tool called \'{split_call}\'.")
+            return
+
+        if os.path.isfile(stats_file):
+            with open(stats_file, mode="r") as file:
+                stats = json.load(file)
+        else:
+            stats = dict()
+
+        key = "is_effective" if tool_was_effective else "not_effective"
+        subdict = stats.get(split_call)
+        if subdict is None:
+            subdict = {key: 1}
+            stats[split_call] = subdict
+
+        else:
+            subdict[key] = subdict.get(key, 0) + 1
+
+        with open(stats_file, mode="w") as file:
+            json.dump(stats, file)
