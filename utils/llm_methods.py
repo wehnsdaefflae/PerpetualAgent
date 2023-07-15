@@ -142,7 +142,7 @@ class LLMMethods(ABC):
         arguments = json.loads(arguments_str)
 
         missing_keys = LLMMethods.find_missing_keys(arguments, parameters)
-        if len(missing_keys) > 0:
+        if 0 < len(missing_keys):
             logger.warning(f"OpenAI API did not return all the required arguments. Missing: {missing_keys}")
             if strict:
                 raise ExtractionException(f"OpenAI API did not return all the required arguments. Missing: {missing_keys}")
