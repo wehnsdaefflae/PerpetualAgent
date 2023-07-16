@@ -2,6 +2,7 @@
 import dataclasses
 import json
 import logging
+import os
 import types
 from traceback import format_exc
 
@@ -237,3 +238,15 @@ class PerpetualAgent:
             last_tool_result = tool_result.result
 
             i += 1
+
+    def memorize(self, action: str, tool_name: str, arguments: dict[str, any], result: str) -> None:
+        tool_schema = self.toolbox.get_schema_from_name(tool_name)
+        arguments_str = json.dumps(arguments)
+        naturalized = LLMMethods.naturalize(action, tool_schema, arguments_str, result, model="gpt-3.5-turbo")
+        file_index = 0
+        for each_file in os.listdir("memory/"):
+            if not each_file.endswith(".txt"):
+                continue
+            name, ext = os.path.splitext(each_file)
+
+        return
