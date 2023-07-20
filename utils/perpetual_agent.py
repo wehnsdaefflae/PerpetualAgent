@@ -13,7 +13,7 @@ from utils.json_schemata import docstring_schema, progress_schema
 from utils.llm_methods import LLMMethods, ExtractionException
 from utils.prompts import CODER
 from utils.logging_handler import logging_handlers
-from utils.misc import truncate, extract_code_blocks, insert_docstring, compose_docstring
+from utils.misc import truncate, extract_code_blocks, insert_docstring, compose_docstring, get_date_name
 from utils.prompts import PROGRESS_UPDATER, PROGRESS_REPORT
 from utils.toolbox import ToolBox, SchemaExtractionException
 
@@ -239,14 +239,59 @@ class PerpetualAgent:
 
             i += 1
 
-    def memorize(self, action: str, tool_name: str, arguments: dict[str, any], result: str) -> None:
-        tool_schema = self.toolbox.get_schema_from_name(tool_name)
-        arguments_str = json.dumps(arguments)
-        naturalized = LLMMethods.naturalize(action, tool_schema, arguments_str, result, model="gpt-3.5-turbo")
-        file_index = 0
-        for each_file in os.listdir("memory/"):
-            if not each_file.endswith(".txt"):
-                continue
-            name, ext = os.path.splitext(each_file)
+    def respond_new(self, request: str, project_name: str | None = None) -> str:
+        if project_name is None:
+            project_name = get_date_name()
+            self.main_logger.info(f"Starting new project '{project_name}'.")
+        else:
+            self.main_logger.info(f"Continuing project '{project_name}'.")
 
-        return
+        project_directory = os.path.join("projects/", project_name)
+        history, progress = self.read_project_data(project_directory)
+
+        while not progress["done"]:
+            report = progress["report"]
+            thought = self.sample_next_thought(request, report)
+            summary = self.summarize(history, thought)
+            action, arguments, observation = self.implement_thought(thought, summary)
+            fact = self.naturalize(thought, action, arguments, observation)
+            self.append_to_history(project_directory, history, fact)
+            progress = self.update_progress(report, fact, request)
+
+        return progress["report"]
+
+    def implement_thought(self, thought: str, summary: str) -> tuple[str, dict[str, any], str]:
+        action, arguments = self.get_action(thought, summary)  # includes tool_name, args (done if tool_name == "finalize")
+        observation = self.perform_action(action)  # selection and execution must be combined to be able to repeat if creation or execution fails
+        return action, arguments, observation
+
+    def append_to_history(self, project_directory: str, history: list[str], fact: str) -> None:
+        history.append(fact)
+        history_path = os.path.join(project_directory, "history.json")
+        with open(history_path, mode="a") as file:
+            json.dump(fact, file)
+            file.write("\n")
+
+    def read_project_data(self, project_directory: str) -> tuple[list[str], dict[str, any]]:
+        if not os.path.isdir(project_directory):
+            os.makedirs(project_directory)
+            return list(), {"report": "No progress yet.", "done": False}
+
+        history = self.read_history(project_directory)
+        progress = self.read_progress(project_directory)
+        return history, progress
+
+
+    def read_progress(self, project_directory: str) -> dict[str, any]:
+        progress_path = os.path.join(project_directory, "progress.json")
+        with open(progress_path, mode="r") as file:
+            progress = json.load(file)
+            assert isinstance(progress, dict)
+        return progress
+
+
+    def read_history(self, project_directory: str) -> list[str]:
+        history_path = os.path.join(project_directory, "history.json")
+        with open(history_path, mode="r") as file:
+            return [json.loads(each_line) for each_line in file]
+

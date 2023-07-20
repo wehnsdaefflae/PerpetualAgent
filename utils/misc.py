@@ -1,5 +1,6 @@
 # coding=utf-8
 import ast
+import datetime
 import re
 
 import logging
@@ -134,3 +135,9 @@ def compose_docstring(docstring_data: dict[str, any]) -> str:
         f"Returns:\n"
         f"    {return_str}\n"
     )
+
+
+def get_date_name() -> str:
+    now = datetime.datetime.now()
+    folder_name = now.strftime("%Y_%m_%d_%H_%M_%S")
+    return folder_name
