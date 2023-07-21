@@ -111,7 +111,7 @@ CODER = (
     "{docstring}\n"
     f"\n"
     "## Instructions\n"
-    "Generate a Python function that implements the docstring above. The function must be type hinted and working according to the docstring.\n"
+    "Generate a fully functioning type hinted Python function that implements the docstring above.\n"
     "Make use of the available helper functions from the list above by importing them from the tools module (e.g. for the calculate tool: `from tools.calculate import "
     "calculate`).\n"
     "Do not simulate behavior or use placeholder logic or variables that must be filled in manually (e.g. API keys)!\n"

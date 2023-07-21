@@ -14,16 +14,20 @@ from utils.llm_methods import LLMMethods, ExtractionException
 from utils.prompts import CODER
 from utils.logging_handler import logging_handlers
 from utils.misc import truncate, extract_code_blocks, insert_docstring, compose_docstring, get_date_name
-from utils.prompts import PROGRESS_UPDATER, PROGRESS_REPORT
+from utils.prompts import PROGRESS_REPORT
 from utils.toolbox import ToolBox, SchemaExtractionException
 
 
 class ToolCreationException(Exception):
-    pass
+    def __init__(self, message: str, data: dict[str, any] | None = None) -> None:
+        super().__init__(message)
+        self.data = data or dict()
 
 
 class ToolApplicationException(Exception):
-    pass
+    def __init__(self, data: dict[str, any]) -> None:
+        self.data = data
+        super().__init__()
 
 
 @dataclasses.dataclass
@@ -240,14 +244,7 @@ class PerpetualAgent:
             i += 1
 
     def respond_new(self, request: str, project_name: str | None = None) -> str:
-        if project_name is None:
-            project_name = get_date_name()
-            self.main_logger.info(f"Starting new project '{project_name}'.")
-        else:
-            self.main_logger.info(f"Continuing project '{project_name}'.")
-
-        project_directory = os.path.join("projects/", project_name)
-        history, progress = self.read_project_data(project_directory)
+        history, progress = self.read_project_data(project_name)
 
         while not progress["done"]:
             report = progress["report"]
@@ -255,32 +252,77 @@ class PerpetualAgent:
             summary = self.summarize(history, thought)
             action, arguments, observation = self.implement_thought(thought, summary)
             fact = self.naturalize(thought, action, arguments, observation)
-            self.append_to_history(project_directory, history, fact)
+            self.append_to_history(project_name, history, fact)
             progress = self.update_progress(report, fact, request)
 
         return progress["report"]
 
+    def sample_next_thought(self, request: str, report: str) -> str:
+        # given the current progress, what would be an expert's next thought on how to fulfill the request?
+        raise NotImplementedError()
+
+    def summarize(self, history: list[str], thought: str) -> str:
+        # summarize the history with regard for the thought and priorities more recent facts
+        raise NotImplementedError()
+
+    def naturalize(self, thought: str, action: str, arguments: dict[str, any], observation: str) -> str:
+        arguments_json = json.dumps(arguments)
+        action_schema = self.toolbox.get_schema_from_name(action)
+        fact = LLMMethods.naturalize(thought, action_schema, arguments_json, observation, model="gpt-3.5-turbo")
+        return fact
+
+    def update_progress(self, report: str, fact: str, request: str) -> dict[str, any]:
+        # update the report with the fact and return the updated progress including a flag whether the request is fulfilled
+        raise NotImplementedError()
+
     def implement_thought(self, thought: str, summary: str) -> tuple[str, dict[str, any], str]:
-        action, arguments = self.get_action(thought, summary)  # includes tool_name, args (done if tool_name == "finalize")
-        observation = self.perform_action(action)  # selection and execution must be combined to be able to repeat if creation or execution fails
+        try:
+            # includes tool_name, args (done if tool_name == "finalize")
+            action, arguments = self.get_action(thought, summary)
+
+        except ToolCreationException as e:
+            return "create_tool", e.data, f"{e.__cause__ if e.__cause__ else e}"
+
+        try:
+            # selection and execution must be combined to be able to repeat if creation or execution fails
+            observation = self.perform_action(action, arguments)
+
+        except ToolApplicationException as e:
+            return f"apply_tool", e.data, f"{e.__cause__ if e.__cause__ else e}"
+
         return action, arguments, observation
 
-    def append_to_history(self, project_directory: str, history: list[str], fact: str) -> None:
+    def get_action(self, thought: str, summary: str) -> tuple[str, dict[str, any]]:
+        # given the thought and the summary, what is the next action to take?
+        # 1. generate the docstring for a function that implements the thought
+        # 2. search in the toolbox for a tool that matches the docstring
+        # 3. if no tool is found, create a new tool (check it. if it fails, raise ToolCreationException(data={"docstring": docstring}))
+        raise NotImplementedError()
+
+    def perform_action(self, action: str, arguments: dict[str, any]) -> str:
+        # perform the action with the given arguments and return the observation
+        raise NotImplementedError()
+
+    def append_to_history(self, project_name: str, history: list[str], fact: str) -> None:
         history.append(fact)
+        project_directory = os.path.join("projects/", project_name)
         history_path = os.path.join(project_directory, "history.json")
         with open(history_path, mode="a") as file:
             json.dump(fact, file)
             file.write("\n")
 
-    def read_project_data(self, project_directory: str) -> tuple[list[str], dict[str, any]]:
-        if not os.path.isdir(project_directory):
+    def read_project_data(self, project_name: str | None) -> tuple[list[str], dict[str, any]]:
+        project_directory = os.path.join("projects/", project_name)
+        if project_name is None:
+            project_name = get_date_name()
+            self.main_logger.info(f"Starting new project '{project_name}'.")
             os.makedirs(project_directory)
             return list(), {"report": "No progress yet.", "done": False}
 
+        self.main_logger.info(f"Continuing project '{project_name}'.")
         history = self.read_history(project_directory)
         progress = self.read_progress(project_directory)
         return history, progress
-
 
     def read_progress(self, project_directory: str) -> dict[str, any]:
         progress_path = os.path.join(project_directory, "progress.json")
@@ -289,9 +331,7 @@ class PerpetualAgent:
             assert isinstance(progress, dict)
         return progress
 
-
     def read_history(self, project_directory: str) -> list[str]:
         history_path = os.path.join(project_directory, "history.json")
         with open(history_path, mode="r") as file:
             return [json.loads(each_line) for each_line in file]
-
