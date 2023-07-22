@@ -12,7 +12,7 @@ import numpy
 from hyperdb import hyper_SVM_ranking_algorithm_sort
 
 from utils.basic_llm_calls import openai_chat, get_embeddings
-from utils.json_schemata import docstring_schema, progress_schema
+from utils.json_schemata import docstring_schema, progress_schema, update_progress
 from utils.llm_methods import LLMMethods, ExtractionException
 from utils.prompts import CODER
 from utils.logging_handler import logging_handlers
@@ -249,7 +249,7 @@ class PerpetualAgent:
     def respond_new(self, request: str, project_name: str | None = None) -> str:
         fact_db, progress = self.read_project_data(project_name)
 
-        while not progress["done"]:
+        while not progress["is_done"]:
             report = progress["report"]
             thought = self.sample_next_thought(request, report)
             summary = self.summarize(fact_db, thought)
@@ -257,6 +257,7 @@ class PerpetualAgent:
             fact = self.naturalize(thought, action, arguments, observation)
             self.append_to_history(project_name, fact_db, fact)
             progress = self.update_progress(report, fact, request)
+            # update action set. remove actions that frequently failed. add stats in `implement_thought`
 
         return progress["report"]
 
@@ -275,7 +276,7 @@ class PerpetualAgent:
         response = LLMMethods.respond(prompt, list(), function_id="sample_next_thought", model="gpt-3.5-turbo")
         return response
 
-    def summarize(self, history: hyperdb.HyperDB(), thought: str) -> str:
+    def summarize(self, history: hyperdb.HyperDB(), thought: str, n: int = 5) -> str:
         embedding, = get_embeddings([thought])
         no_documents = len(history.documents)
         document_indices, fitnesses = hyper_SVM_ranking_algorithm_sort(
@@ -295,10 +296,18 @@ class PerpetualAgent:
             each_dict["prioritized_fitness"] = prioritized_fitness
             new_fitness.append(each_dict)
 
-        # get n best according to prioritized_fitness
+        new_fitness.sort(key=lambda x: x["prioritized_fitness"], reverse=True)
+        relevant_facts = "\n\n".join(each_document["fact"] for each_document in new_fitness[:n])
+        prompt = (
+            f"<!-- BEGIN FACTS -->\n"
+            f"{relevant_facts}\n"
+            f"<!-- END FACTS -->\n"
+            f"\n"
+            f"Summarize the facts. Take care to preserve all literal information."
+        )
 
-        # summarize the history with regard for the thought and priorities more recent facts
-        raise NotImplementedError()
+        response = LLMMethods.respond(prompt, list(), function_id="summarize", model="gpt-3.5-turbo")
+        return response
 
     def naturalize(self, thought: str, action: str, arguments: dict[str, any], observation: str) -> str:
         arguments_json = json.dumps(arguments)
@@ -307,8 +316,21 @@ class PerpetualAgent:
         return fact
 
     def update_progress(self, report: str, fact: str, request: str) -> dict[str, any]:
-        # update the report with the fact and return the updated progress including a flag whether the request is fulfilled
-        raise NotImplementedError()
+        prompt = (
+            f"<!-- BEGIN REPORT -->\n"
+            f"{report}\n"
+            f"<!-- END REPORT -->\n"
+            f"\n"
+            f"<!-- BEGIN LAST FACT -->\n"
+            f"{fact}\n"
+            f"<!-- END LAST FACT -->\n"
+            f"\n"
+            f"<!-- BEGIN REQUEST -->\n"
+            f"{request}\n"
+            f"<!-- END REQUEST -->"
+        )
+        progress_report = LLMMethods.openai_extract_arguments(prompt, update_progress)
+        return progress_report
 
     def implement_thought(self, thought: str, summary: str) -> tuple[str, dict[str, any], str]:
         try:

@@ -104,6 +104,25 @@ progress_schema = {  # prompt requires: request, progress, last_action, last_res
     }
 }
 
+update_progress = {
+    "name": "update_progress",
+    "description": "Gradually updates the current report of progress towards fulfilling the request with the last fact.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "report": {
+                "description": "Updated progress report with the last fact incorporated.",
+                "type": "string"
+            },
+            "is_done": {
+                "description": "'True' if the request is already completely fulfilled. 'False' if there's any uncertainty or outstanding steps to be performed.",
+                "type": "boolean"
+            }
+        },
+        "required": ["updated_progress", "is_done"]
+    }
+}
+
 docstring_schema = {
     "name": "make_docstring",
     "description": "Generates a Google style docstring for a given function.",
