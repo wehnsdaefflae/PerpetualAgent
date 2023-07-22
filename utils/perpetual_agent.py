@@ -7,8 +7,11 @@ import types
 from traceback import format_exc
 
 import colorama
+import hyperdb
+import numpy
+from hyperdb import hyper_SVM_ranking_algorithm_sort
 
-from utils.basic_llm_calls import openai_chat
+from utils.basic_llm_calls import openai_chat, get_embeddings
 from utils.json_schemata import docstring_schema, progress_schema
 from utils.llm_methods import LLMMethods, ExtractionException
 from utils.prompts import CODER
@@ -244,24 +247,56 @@ class PerpetualAgent:
             i += 1
 
     def respond_new(self, request: str, project_name: str | None = None) -> str:
-        history, progress = self.read_project_data(project_name)
+        fact_db, progress = self.read_project_data(project_name)
 
         while not progress["done"]:
             report = progress["report"]
             thought = self.sample_next_thought(request, report)
-            summary = self.summarize(history, thought)
+            summary = self.summarize(fact_db, thought)
             action, arguments, observation = self.implement_thought(thought, summary)
             fact = self.naturalize(thought, action, arguments, observation)
-            self.append_to_history(project_name, history, fact)
+            self.append_to_history(project_name, fact_db, fact)
             progress = self.update_progress(report, fact, request)
 
         return progress["report"]
 
     def sample_next_thought(self, request: str, report: str) -> str:
-        # given the current progress, what would be an expert's next thought on how to fulfill the request?
-        raise NotImplementedError()
+        prompt = (
+            f"<!-- BEGIN REQUEST -->\n"
+            f"{request}\n"
+            f"<!-- END REQUEST -->\n"
+            f"\n"
+            f"<!-- BEGIN PROGRESS REPORT -->\n"
+            f"{report}\n"
+            f"<!-- END PROGRESS REPORT -->\n"
+            f"\n"
+            f"Given the provided progress report, what would be an expert's next thought on how to fulfill the above request?"
+        )
+        response = LLMMethods.respond(prompt, list(), function_id="sample_next_thought", model="gpt-3.5-turbo")
+        return response
 
-    def summarize(self, history: list[str], thought: str) -> str:
+    def summarize(self, history: hyperdb.HyperDB(), thought: str) -> str:
+        embedding, = get_embeddings([thought])
+        no_documents = len(history.documents)
+        document_indices, fitnesses = hyper_SVM_ranking_algorithm_sort(
+            history.vectors,
+            numpy.array(embedding),
+            top_k=no_documents,
+            metric=history.similarity_metric
+        )
+
+        new_fitness = list()
+        for each_index, each_fitness in zip(document_indices, fitnesses):
+            each_document = history.documents[each_index]
+            each_dict = json.loads(each_document)
+            each_index = each_dict["index"]
+            backwards_index = no_documents - each_index
+            prioritized_fitness = each_fitness / backwards_index
+            each_dict["prioritized_fitness"] = prioritized_fitness
+            new_fitness.append(each_dict)
+
+        # get n best according to prioritized_fitness
+
         # summarize the history with regard for the thought and priorities more recent facts
         raise NotImplementedError()
 
@@ -303,26 +338,34 @@ class PerpetualAgent:
         # perform the action with the given arguments and return the observation
         raise NotImplementedError()
 
-    def append_to_history(self, project_name: str, history: list[str], fact: str) -> None:
-        history.append(fact)
+    def append_to_history(self, project_name: str, history: hyperdb.HyperDB(), fact: str) -> None:
+        embedding, = get_embeddings([fact])
+        no_facts = len(history.documents)
+        fact_json = json.dumps(
+            {"fact": fact, "index": no_facts}
+        )
+        history.add_document(fact_json, embedding)
+        history.save("facts_db.pickle.gz")
         project_directory = os.path.join("projects/", project_name)
         history_path = os.path.join(project_directory, "history.json")
         with open(history_path, mode="a") as file:
             json.dump(fact, file)
             file.write("\n")
 
-    def read_project_data(self, project_name: str | None) -> tuple[list[str], dict[str, any]]:
+    def read_project_data(self, project_name: str | None) -> tuple[hyperdb.HyperDB(), dict[str, any]]:
         project_directory = os.path.join("projects/", project_name)
+        db = hyperdb.HyperDB()
+
         if project_name is None:
             project_name = get_date_name()
             self.main_logger.info(f"Starting new project '{project_name}'.")
             os.makedirs(project_directory)
-            return list(), {"report": "No progress yet.", "done": False}
+            return db, {"report": "No progress yet.", "done": False}
 
+        db.load("facts_db.pickle.gz")
         self.main_logger.info(f"Continuing project '{project_name}'.")
-        history = self.read_history(project_directory)
         progress = self.read_progress(project_directory)
-        return history, progress
+        return db, progress
 
     def read_progress(self, project_directory: str) -> dict[str, any]:
         progress_path = os.path.join(project_directory, "progress.json")
@@ -330,8 +373,3 @@ class PerpetualAgent:
             progress = json.load(file)
             assert isinstance(progress, dict)
         return progress
-
-    def read_history(self, project_directory: str) -> list[str]:
-        history_path = os.path.join(project_directory, "history.json")
-        with open(history_path, mode="r") as file:
-            return [json.loads(each_line) for each_line in file]
