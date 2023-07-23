@@ -126,7 +126,7 @@ update_progress = {
 
 docstring_schema = {
     "name": "make_docstring",
-    "description": "Generates a Google style docstring for a given function.",
+    "description": "Generates a Google style docstring for a general and versatile function.",
     "parameters": {
         "type": "object",
         "properties": {

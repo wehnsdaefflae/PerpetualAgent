@@ -142,7 +142,7 @@ class StepProcessor:
                 return tool_result
 
             message_history.append(
-                {"role": "user", "content": tool_result.output}
+                {"role": "user", "content": json.dumps(tool_result.output)}
             )
 
         return ToolCall("tool_execution", {"description": docstring}, f"Execution failed after {self.implementation_attempts} attempts.")
