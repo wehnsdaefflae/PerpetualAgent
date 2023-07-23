@@ -74,7 +74,7 @@ class StepProcessor:
             raise ToolCreationException("Error while extracting tool code.") from e
 
     def _confirmation(self, tool_call: str) -> bool:
-        response = input(f"{colorama.Fore.RED}{tool_call}{colorama.Style.RESET_ALL} [y/N]: ")
+        response = input(f"{colorama.Fore.YELLOW}{tool_call}{colorama.Style.RESET_ALL} [y/N]: ")
         return "y" == response.lower().strip()
 
     def apply_tool(self, tool: types.FunctionType, arguments: dict[str, any], is_temp_tool: bool) -> ToolCall:
@@ -92,11 +92,12 @@ class StepProcessor:
 
         except Exception as e:
             trace = format_exc()
-            result = f"{tool_call}: Error during execution. {e}\n{trace}"
+            result = f"Error during execution: {e}"
+            print(f"{colorama.Fore.RED}{result}{colorama.Style.RESET_ALL}")
             self.logger.error(result)
             if is_temp_tool:
                 self.logger.error(trace)
-                return ToolCall("execution", {"tool_call": tool_call}, result)
+                return ToolCall("execution", {"tool_call": tool_call}, str(trace))
 
         finally:
             del tool
@@ -137,7 +138,7 @@ class StepProcessor:
 
             print(f"{colorama.Back.RED}New tool:{colorama.Style.RESET_ALL}")
             tool_result = self.apply_tool(tmp_tool, arguments, True)
-            if tool_result.tool_name != "reject" and tool_result.tool_name != "execution":
+            if tool_result.tool_name != "execution":
                 self.toolbox.save_tool_code(new_tool_code, docstring_dict, False)
                 return tool_result
 
@@ -195,9 +196,7 @@ class PerpetualAgent:
     def _save_history(history: list[dict[str, any]], project_directory: str) -> None:
         history_path = os.path.join(project_directory, "history.json")
         with open(history_path, mode="w") as file:
-            for each_fact in history:
-                json.dump(each_fact, file, indent=4, sort_keys=True)
-                file.write("\n")
+            json.dump(history, file, indent=4, sort_keys=True)
 
     @staticmethod
     def _save_progress(progress: dict[str, any], project_directory: str) -> None:
@@ -209,18 +208,14 @@ class PerpetualAgent:
     def _save_fact(fact: str, facts_db: hyperdb.HyperDB, project_directory: str) -> None:
         embedding, = get_embeddings([fact])
         no_facts = len(facts_db.documents)
-        fact_json = json.dumps(
-            {"fact": fact, "index": no_facts},
-            indent=4,
-            sort_keys=True
-        )
+        fact_json = json.dumps({"fact": fact, "index": no_facts})
         facts_db.add_document(fact_json, embedding)
         facts_path = os.path.join(project_directory, "facts_db.pickle.gz")
         facts_db.save(facts_path)
 
-        facts_path = os.path.join(project_directory, "facts.json")
+        facts_path = os.path.join(project_directory, "facts.jsonl")
         with open(facts_path, mode="a") as file:
-            json.dump(fact, file, indent=4, sort_keys=True)
+            file.write(fact_json)
             file.write("\n")
 
     @staticmethod
@@ -306,7 +301,7 @@ class PerpetualAgent:
 
         arguments_json = json.dumps(arguments)
         action_schema = self.toolbox.get_schema_from_name(action)
-        fact = LLMMethods.naturalize(thought, action_schema, arguments_json, observation, model="gpt-3.5-turbo")
+        fact = LLMMethods.naturalize(thought, action_schema, arguments_json, str(observation), model="gpt-3.5-turbo")
         return fact
 
     def implement_thought(self, thought: str, summary: str) -> ToolCall:
@@ -319,7 +314,7 @@ class PerpetualAgent:
         docstring = compose_docstring(docstring_dict)
         tool_name = LLMMethods.select_tool_name(self.toolbox, docstring)
         if tool_name is not None:
-            print(f"{colorama.Back.RED}Tool:{colorama.Style.RESET_ALL}")
+            print(f"{colorama.Back.YELLOW}Tool:{colorama.Style.RESET_ALL}")
             tool = self.toolbox.get_tool_from_name(tool_name)
             tool_schema = self.toolbox.get_schema_from_name(tool_name)
             arguments = LLMMethods.openai_extract_arguments(summary, tool_schema, model="gpt-3.5-turbo")
@@ -342,7 +337,7 @@ class PerpetualAgent:
                 f"{json.dumps(data_prompt, indent=4, sort_keys=True)}\n"
                 f"```"
             )
-            progress = LLMMethods.openai_extract_arguments(prompt, proceed, history=history, model="gpt-3.5-turbo-0613")
+            progress = LLMMethods.openai_extract_arguments(prompt, proceed, history=history, model="gpt-4-0613")
             if progress["is_done"]:
                 break
 
@@ -351,8 +346,8 @@ class PerpetualAgent:
 
             thought = progress["thought"]
             print(
-                f"{colorama.Back.RED}Thought:{colorama.Style.RESET_ALL}\n"
-                f"{colorama.Fore.RED}{thought}{colorama.Style.RESET_ALL}"
+                f"{colorama.Back.BLUE}Thought:{colorama.Style.RESET_ALL}\n"
+                f"{colorama.Fore.BLUE}{thought}{colorama.Style.RESET_ALL}"
             )
 
             if len(facts_db.documents) < 1:
@@ -365,8 +360,8 @@ class PerpetualAgent:
 
             tool_call = self.implement_thought(thought, summary)
             print(
-                f"{colorama.Back.RED}Observation:{colorama.Style.RESET_ALL}\n"
-                f"{colorama.Fore.RED}{tool_call.output}{colorama.Style.RESET_ALL}"
+                f"{colorama.Back.CYAN}Observation:{colorama.Style.RESET_ALL}\n"
+                f"{colorama.Fore.CYAN}{tool_call.output}{colorama.Style.RESET_ALL}"
             )
             fact = self.naturalize(thought, tool_call)
 

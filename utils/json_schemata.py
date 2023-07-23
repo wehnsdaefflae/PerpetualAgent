@@ -131,16 +131,17 @@ docstring_schema = {
         "type": "object",
         "properties": {
             "name": {
-                "description": "A descriptive name for the function.",
+                "description": "A general and versatile name for the function.",
                 "type": "string"
             },
             "summary": {
-                "description": "A one sentence summary of the function without mentioning the name of the function.",
+                "description": "A general and versatile one sentence summary of the function without mentioning the name of the function.",
                 "type": "string"
             },
             "description": {
                 "description": "A brief explanation of the function without mentioning the name of the function. It should be a clear, concise overview of what the "
-                               "function does.",
+                               "function does. The function must be general and versatile so that it can be used in many different contexts. Do not mention particular "
+                               "use cases or contexts. Describe in general what the function does, not how it is done.",
                 "type": "string"
             },
             "args": {
@@ -221,7 +222,8 @@ proceed = {
                 "type": "boolean"
             },
             "thought": {
-                "description": "A string that describes an expert's thought on what to do next to fulfill the request given the current progress",
+                "description": "A string that describes an expert's thought on what should be the next single step necessary to fulfill the request given the current "
+                               "progress",
                 "type": "string"
             }
         },
