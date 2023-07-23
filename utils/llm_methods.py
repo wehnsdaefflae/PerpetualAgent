@@ -116,11 +116,21 @@ class LLMMethods(ABC):
         return arguments
 
     @staticmethod
-    def openai_extract_arguments(full_description: str, tool_schema: dict[str, any], model="gpt-3.5-turbo-0613", strict: bool = True, **parameters: any) -> dict[str, any]:
+    def openai_extract_arguments(full_description: str,
+                                 tool_schema: dict[str, any],
+                                 history: list[dict[str, any]] | None = None,
+                                 model="gpt-3.5-turbo-0613",
+                                 strict: bool = True,
+                                 **parameters: any) -> dict[str, any]:
+        if history is None:
+            history = list()
+
+        history.append({"role": "user", "content": full_description})
+
         response = openai_chat(
             f"extracting with `{tool_schema['name']}`",
             model=model,
-            messages=[{"role": "user", "content": full_description}],
+            messages=history,
             functions=[tool_schema],
             function_call={"name": tool_schema["name"]},
             **parameters,
@@ -147,6 +157,7 @@ class LLMMethods(ABC):
             if strict:
                 raise ExtractionException(f"OpenAI API did not return all the required arguments. Missing: {missing_keys}")
 
+        history.append(response_message)
         return arguments
 
     @staticmethod

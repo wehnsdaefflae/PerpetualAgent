@@ -106,20 +106,21 @@ progress_schema = {  # prompt requires: request, progress, last_action, last_res
 
 update_progress = {
     "name": "update_progress",
-    "description": "Gradually updates the current report of progress towards fulfilling the request with the last fact.",
+    "description": "Takes a report on the current progress in fulfilling the request and updates it with a new fact.",
     "parameters": {
         "type": "object",
         "properties": {
             "report": {
-                "description": "Updated progress report with the last fact incorporated.",
+                "description": "Updated progress report with the new fact incorporated.",
                 "type": "string"
             },
             "is_done": {
-                "description": "'True' if the request is already completely fulfilled. 'False' if there's any uncertainty or outstanding steps to be performed.",
+                "description": "'True' if the request is already completely fulfilled as per the new fact. 'False' if there's any uncertainty or outstanding steps to "
+                               "be performed.",
                 "type": "boolean"
             }
         },
-        "required": ["updated_progress", "is_done"]
+        "required": ["report", "is_done"]
     }
 }
 
@@ -195,5 +196,35 @@ docstring_schema = {
             }
         },
         "required": ["name", "summary", "description", "args", "return_value"]
+    }
+}
+
+proceed = {
+    "name": "proceed",
+    "description": "Takes in parameters that describe the current progress in fulfilling the request as well as a thought on how to continue.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "report": {
+                "description": "The progress report from your last response, now updated to also cover the last step towards fulfilling the request mentioned in this "
+                               "message.",
+                "type": "string"
+            },
+            "was_step_effective": {
+                "description": "'True' if the last step contributed to fulfilling the request. 'False' if its execution did not result in any progress towards "
+                               "fulfilling the request or if no step has been executed.",
+                "type": "boolean"
+            },
+            "is_done": {
+                "description": "'True' if the request is already completely fulfilled as per the new fact. 'False' if there's any uncertainty or outstanding steps to "
+                               "be performed.",
+                "type": "boolean"
+            },
+            "thought": {
+                "description": "A string that describes an expert's thought on what to do next to fulfill the request given the current progress",
+                "type": "string"
+            }
+        },
+        "required": ["report", "was_step_effective", "is_done", "thought"]
     }
 }

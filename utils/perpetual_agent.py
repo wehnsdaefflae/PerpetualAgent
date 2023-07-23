@@ -12,13 +12,24 @@ import numpy
 from hyperdb import hyper_SVM_ranking_algorithm_sort
 
 from utils.basic_llm_calls import openai_chat, get_embeddings
-from utils.json_schemata import docstring_schema, progress_schema, update_progress
+from utils.json_schemata import docstring_schema, proceed
 from utils.llm_methods import LLMMethods, ExtractionException
 from utils.prompts import CODER
 from utils.logging_handler import logging_handlers
 from utils.misc import truncate, extract_code_blocks, insert_docstring, compose_docstring, get_date_name
-from utils.prompts import PROGRESS_REPORT
 from utils.toolbox import ToolBox, SchemaExtractionException
+
+
+class ToolSelectionException(Exception):
+    def __init__(self, message: str, data: dict[str, any] | None = None) -> None:
+        super().__init__(message)
+        self.data = data
+
+
+class ToolApplicationException(Exception):
+    def __init__(self, message: str, data: dict[str, any] | None = None) -> None:
+        super().__init__(message)
+        self.data = data
 
 
 class ToolCreationException(Exception):
@@ -27,17 +38,11 @@ class ToolCreationException(Exception):
         self.data = data or dict()
 
 
-class ToolApplicationException(Exception):
-    def __init__(self, data: dict[str, any]) -> None:
-        self.data = data
-        super().__init__()
-
-
 @dataclasses.dataclass
-class ToolResult:
-    tool_call: str
-    result: str
-    succeeded: bool
+class ToolCall:
+    tool_name: str
+    input: dict[str, any]
+    output: any
 
 
 class StepProcessor:
@@ -72,7 +77,7 @@ class StepProcessor:
         response = input(f"{colorama.Fore.RED}{tool_call}{colorama.Style.RESET_ALL} [y/N]: ")
         return "y" == response.lower().strip()
 
-    def _apply_tool(self, tool: types.FunctionType, arguments: dict[str, any], is_temp_tool: bool) -> ToolResult:
+    def apply_tool(self, tool: types.FunctionType, arguments: dict[str, any], is_temp_tool: bool) -> ToolCall:
         tool_name = tool.__name__
 
         truncated_arguments = ", ".join(f"str({k})={truncate(str(v), 50)!r}" for k, v in arguments.items())
@@ -80,25 +85,25 @@ class StepProcessor:
 
         if not self._confirmation(tool_call):
             del tool
-            return ToolResult(tool_call, "User rejected execution.", False)
+            return ToolCall("reject", {"tool_call": tool_call}, "Tool call rejected.")
 
         try:
             result = tool(**arguments)
 
         except Exception as e:
-            result = f"{tool_call}: Error during execution. {e}"
+            trace = format_exc()
+            result = f"{tool_call}: Error during execution. {e}\n{trace}"
             self.logger.error(result)
             if is_temp_tool:
-                trace = format_exc()
                 self.logger.error(trace)
-                return ToolResult(tool_call, str(trace), False)
+                return ToolCall("execution", {"tool_call": tool_call}, result)
 
         finally:
             del tool
 
-        return ToolResult(tool_call, str(result), True)
+        return ToolCall(tool_name, arguments, result)
 
-    def _apply_new_tool(self, text: str, docstring_dict: dict[str, any]) -> ToolResult:
+    def apply_new_tool(self, text: str, docstring_dict: dict[str, any]) -> ToolCall:
         tool_descriptions_string = self.toolbox.get_all_descriptions_string()
         docstring = compose_docstring(docstring_dict)
         code_prompt = CODER.format(tool_descriptions=tool_descriptions_string, docstring=docstring)
@@ -114,59 +119,33 @@ class StepProcessor:
 
             except ToolCreationException as e:
                 self.logger.error(e)
-                return ToolResult("[tool_creation_failed]", f"{e.__cause__ if e.__cause__ else e}", False)
+                return ToolCall("tool_creation", {"description": docstring}, e.__cause__ if e.__cause__ else e)
 
             try:
                 tool_schema = self.toolbox.get_schema_from_code(new_tool_code, docstring_dict)
 
             except SchemaExtractionException as e:
                 self.logger.error(e)
-                return ToolResult("[schema_extraction_failed]", f"{e}", False)
+                return ToolCall("schema_extraction", {"code": new_tool_code, "description": docstring}, e.__cause__ if e.__cause__ else e)
 
             try:
                 arguments = LLMMethods.openai_extract_arguments(text, tool_schema, model="gpt-3.5-turbo-0613")
 
             except ExtractionException as e:
                 self.logger.error(e)
-                return ToolResult("[argument_extraction_failed]", f"{e.__cause__ if e.__cause__ else e}", False)
+                return ToolCall("argument_extraction", {"information": text, "json_schema": tool_schema}, e.__cause__ if e.__cause__ else e)
 
-            tool_result = self._apply_tool(tmp_tool, arguments, True)
-            if tool_result.succeeded:
+            print(f"{colorama.Back.RED}New tool:{colorama.Style.RESET_ALL}")
+            tool_result = self.apply_tool(tmp_tool, arguments, True)
+            if tool_result.tool_name != "reject" and tool_result.tool_name != "execution":
                 self.toolbox.save_tool_code(new_tool_code, docstring_dict, False)
                 return tool_result
 
             message_history.append(
-                {"role": "user", "content": tool_result.result}
+                {"role": "user", "content": tool_result.output}
             )
 
-        return ToolResult("[tool_execution_failed_permanently]", f"Execution failed after {self.implementation_attempts} attempts.", False)
-
-    def _condense_result(self, result: str, request: str) -> str:
-        if len(result) > self.result_limit:
-            result = LLMMethods.vector_summarize(request, result, model="gpt-3.5-turbo")
-        return result
-
-    def perform(self, action: str, progress_report: str) -> ToolResult:
-        try:
-            docstring_dict = LLMMethods.openai_extract_arguments(action, docstring_schema, strict=True, model="gpt-4-0613")
-        except Exception as e:
-            return ToolResult("[action_selection_failed]", f"{e}", False)
-
-        docstring = compose_docstring(docstring_dict)
-        tool_name = LLMMethods.select_tool_name(self.toolbox, docstring)
-        if tool_name is None:
-            print(f"{colorama.Back.RED}{colorama.Style.BRIGHT}New tool:{colorama.Style.RESET_ALL}")
-            tool_result = self._apply_new_tool(progress_report, docstring_dict)
-
-        else:
-            print(f"{colorama.Back.RED}Tool:{colorama.Style.RESET_ALL}")
-            tool = self.toolbox.get_tool_from_name(tool_name)
-            tool_schema = self.toolbox.get_schema_from_name(tool_name)
-            arguments = LLMMethods.openai_extract_arguments(progress_report, tool_schema, model="gpt-3.5-turbo")
-            tool_result = self._apply_tool(tool, arguments, False)
-
-        step_result = self._condense_result(tool_result.result, action)
-        return ToolResult(tool_result.tool_call, step_result, True)
+        return ToolCall("tool_execution", {"description": docstring}, f"Execution failed after {self.implementation_attempts} attempts.")
 
 
 class PerpetualAgent:
@@ -179,116 +158,127 @@ class PerpetualAgent:
         self.toolbox = ToolBox("tools/")
         self.processor = StepProcessor(self.toolbox)
 
-    def respond(self, main_request: str) -> str:
-        improved_request = LLMMethods.improve_request(main_request, model="gpt-3.5-turbo")
+    @staticmethod
+    def _read_facts_db(project_directory: str) -> hyperdb.HyperDB:
+        db = hyperdb.HyperDB()
+        facts_path = os.path.join(project_directory, "facts_db.pickle.gz")
+        db.load(facts_path)
+        return db
 
-        print(f"{colorama.Fore.CYAN}{improved_request}{colorama.Style.RESET_ALL}\n")
+    @staticmethod
+    def _read_history(project_directory: str) -> list[dict[str, any]]:
+        history_path = os.path.join(project_directory, "history.json")
+        with open(history_path, mode="r") as file:
+            history = list()
+            for each_line in file:
+                fact = json.loads(each_line)
+                assert isinstance(fact, dict)
+                history.append(fact)
+        return history
 
-        summary_length_limit = 5_000
+    @staticmethod
+    def _read_progress(project_directory: str) -> dict[str, any]:
+        progress_path = os.path.join(project_directory, "progress.json")
+        with open(progress_path, mode="r") as file:
+            progress = json.load(file)
+            assert isinstance(progress, dict)
+        return progress
 
-        i = 1
-        last_progress = "[no progress yet]"
-        last_tool_call = "[no action yet]"
-        last_tool_result = "[no result yet]"
-        while True:
-            # "gpt-3.5-turbo-16k-0613", "gpt-4-32k-0613", "gpt-4-0613", "gpt-3.5-turbo-0613"
+    @staticmethod
+    def _read_request(project_directory: str) -> str:
+        request_path = os.path.join(project_directory, "request.txt")
+        with open(request_path, mode="r") as file:
+            request = file.read()
+        return request
 
-            print(f"Step {i}:\n")
+    @staticmethod
+    def _save_history(history: list[dict[str, any]], project_directory: str) -> None:
+        history_path = os.path.join(project_directory, "history.json")
+        with open(history_path, mode="w") as file:
+            for each_fact in history:
+                json.dump(each_fact, file, indent=4, sort_keys=True)
+                file.write("\n")
 
-            print(
-                f"{colorama.Back.CYAN}Progress:{colorama.Style.RESET_ALL}\n"
-                f"{colorama.Fore.CYAN}{last_progress.strip()}{colorama.Style.RESET_ALL}\n"
-            )
+    @staticmethod
+    def _save_progress(progress: dict[str, any], project_directory: str) -> None:
+        progress_path = os.path.join(project_directory, "progress.json")
+        with open(progress_path, mode="w") as file:
+            json.dump(progress, file, indent=4, sort_keys=True)
 
-            summary = PROGRESS_REPORT.format(
-                request=improved_request.strip(),
-                progress=last_progress.strip(),
-                action=last_tool_call.strip(),
-                result=last_tool_result.strip(),
-            )
-
-            if i < 2:
-                action = LLMMethods.sample_first_action(summary, model="gpt-3.5-turbo")
-            else:
-                action = LLMMethods.sample_next_action(summary, model="gpt-3.5-turbo")
-
-            self.main_logger.info(action)
-            print(
-                f"{colorama.Back.YELLOW}Action:{colorama.Style.RESET_ALL}\n"
-                f"{colorama.Fore.YELLOW}{action}{colorama.Style.RESET_ALL}\n"
-            )
-
-            if "[finalize]" in action.lower():
-                self.main_logger.info(f"Request fulfilled: {last_progress}")
-                return last_progress
-
-            tool_result = self.processor.perform(action, summary)  # literal action description
-            print(
-                f"{colorama.Back.BLUE}Result ({'succeeded' if tool_result.succeeded else 'failed'}):{colorama.Style.RESET_ALL}\n"
-                f"{colorama.Fore.BLUE}{truncate(tool_result.result, 200)}{colorama.Style.RESET_ALL}\n"
-            )
-
-            print("====================================\n")
-
-            """
-            update_progress_prompt = PROGRESS_UPDATER.format(PROGRESS_REPORT=summary)
-            last_progress = LLMMethods.respond(update_progress_prompt, list(), function_id="update_progress", model="gpt-3.5-turbo")
-            """
-
-            last_progress_dict = LLMMethods.openai_extract_arguments(summary, progress_schema)
-            last_progress = last_progress_dict["updated_progress"]
-            if i >= 2:
-                last_tool_was_effective = last_progress_dict["was_last_action_effective"]
-                self.toolbox.update_tool_stats(last_tool_call, last_tool_was_effective)
-
-            last_tool_call = tool_result.tool_call
-            last_tool_result = tool_result.result
-
-            i += 1
-
-    def respond_new(self, request: str, project_name: str | None = None) -> str:
-        fact_db, progress = self.read_project_data(project_name)
-
-        while not progress["is_done"]:
-            report = progress["report"]
-            thought = self.sample_next_thought(request, report)
-            summary = self.summarize(fact_db, thought)
-            action, arguments, observation = self.implement_thought(thought, summary)
-            fact = self.naturalize(thought, action, arguments, observation)
-            self.append_to_history(project_name, fact_db, fact)
-            progress = self.update_progress(report, fact, request)
-            # update action set. remove actions that frequently failed. add stats in `implement_thought`
-
-        return progress["report"]
-
-    def sample_next_thought(self, request: str, report: str) -> str:
-        prompt = (
-            f"<!-- BEGIN REQUEST -->\n"
-            f"{request}\n"
-            f"<!-- END REQUEST -->\n"
-            f"\n"
-            f"<!-- BEGIN PROGRESS REPORT -->\n"
-            f"{report}\n"
-            f"<!-- END PROGRESS REPORT -->\n"
-            f"\n"
-            f"Given the provided progress report, what would be an expert's next thought on how to fulfill the above request?"
+    @staticmethod
+    def _save_fact(fact: str, facts_db: hyperdb.HyperDB, project_directory: str) -> None:
+        embedding, = get_embeddings([fact])
+        no_facts = len(facts_db.documents)
+        fact_json = json.dumps(
+            {"fact": fact, "index": no_facts},
+            indent=4,
+            sort_keys=True
         )
-        response = LLMMethods.respond(prompt, list(), function_id="sample_next_thought", model="gpt-3.5-turbo")
-        return response
+        facts_db.add_document(fact_json, embedding)
+        facts_path = os.path.join(project_directory, "facts_db.pickle.gz")
+        facts_db.save(facts_path)
 
-    def summarize(self, history: hyperdb.HyperDB(), thought: str, n: int = 5) -> str:
+        facts_path = os.path.join(project_directory, "facts.json")
+        with open(facts_path, mode="a") as file:
+            json.dump(fact, file, indent=4, sort_keys=True)
+            file.write("\n")
+
+    @staticmethod
+    def _save_request(request: str, project_directory: str) -> None:
+        request_path = os.path.join(project_directory, "request.txt")
+        with open(request_path, mode="w") as file:
+            file.write(request)
+
+    def _initialize_new_project(self) -> tuple[hyperdb.HyperDB(), list[dict[str, any]], dict[str, any], str]:
+        project_name = get_date_name()
+        self.main_logger.info(f"Starting new project '{project_name}'.")
+        facts_db = hyperdb.HyperDB()
+        progress = {"report": "No progress yet.", "eas_step_effective": False, "is_done": False, "thought": "I should initiate the first step to fulfill the request."}
+        history = list()
+        return facts_db, history, progress, project_name
+
+    def _read_project_data(self, project_name: str) -> tuple[hyperdb.HyperDB(), list[dict[str, any]], dict[str, any], str]:
+        project_directory = os.path.join("projects/", project_name)
+        self.main_logger.info(f"Continuing project from '{project_directory}'.")
+
+        db = PerpetualAgent._read_facts_db(project_directory)
+        progress = PerpetualAgent._read_progress(project_directory)
+        history = PerpetualAgent._read_history(project_directory)
+        request = PerpetualAgent._read_request(project_directory)
+        return db, history, progress, request
+
+    def _save_project(self, project_name: str, request: str, progress: dict[str, any], facts_db: hyperdb.HyperDB(), fact: str, history: list[dict[str, any]]) -> None:
+        project_directory = os.path.join("projects/", project_name)
+        self.main_logger.info(f"Starting project at '{project_directory}'.")
+
+        os.makedirs(project_directory)
+
+        PerpetualAgent._save_request(request, project_directory)
+        PerpetualAgent._save_fact(fact, facts_db, project_directory)
+        PerpetualAgent._save_progress(progress, project_directory)
+        PerpetualAgent._save_history(history, project_directory)
+
+    def load_project(self, project_name: str) -> str:
+        facts_db, history, progress, request = self._read_project_data(project_name)
+        return self._process_request(project_name, request, progress, facts_db, history)
+
+    def new_project(self, request: str) -> str:
+        facts_db, history, progress, project_name = self._initialize_new_project()
+        return self._process_request(project_name, request, progress, facts_db, history)
+
+    def summarize(self, facts_db: hyperdb.HyperDB(), thought: str, n: int = 5) -> str:
         embedding, = get_embeddings([thought])
-        no_documents = len(history.documents)
+        no_documents = len(facts_db.documents)
         document_indices, fitnesses = hyper_SVM_ranking_algorithm_sort(
-            history.vectors,
+            facts_db.vectors,
             numpy.array(embedding),
             top_k=no_documents,
-            metric=history.similarity_metric
+            metric=facts_db.similarity_metric
         )
 
         new_fitness = list()
         for each_index, each_fitness in zip(document_indices, fitnesses):
-            each_document = history.documents[each_index]
+            each_document = facts_db.documents[each_index]
             each_dict = json.loads(each_document)
             each_index = each_dict["index"]
             backwards_index = no_documents - each_index
@@ -303,95 +293,84 @@ class PerpetualAgent:
             f"{relevant_facts}\n"
             f"<!-- END FACTS -->\n"
             f"\n"
-            f"Summarize the facts. Take care to preserve all literal information."
+            f"Summarize the facts. Take care to preserve literal information."
         )
 
         response = LLMMethods.respond(prompt, list(), function_id="summarize", model="gpt-3.5-turbo")
         return response
 
-    def naturalize(self, thought: str, action: str, arguments: dict[str, any], observation: str) -> str:
+    def naturalize(self, thought: str, tool_call: ToolCall) -> str:
+        action = tool_call.tool_name
+        arguments = tool_call.input
+        observation = tool_call.output
+
         arguments_json = json.dumps(arguments)
         action_schema = self.toolbox.get_schema_from_name(action)
         fact = LLMMethods.naturalize(thought, action_schema, arguments_json, observation, model="gpt-3.5-turbo")
         return fact
 
-    def update_progress(self, report: str, fact: str, request: str) -> dict[str, any]:
-        prompt = (
-            f"<!-- BEGIN REPORT -->\n"
-            f"{report}\n"
-            f"<!-- END REPORT -->\n"
-            f"\n"
-            f"<!-- BEGIN LAST FACT -->\n"
-            f"{fact}\n"
-            f"<!-- END LAST FACT -->\n"
-            f"\n"
-            f"<!-- BEGIN REQUEST -->\n"
-            f"{request}\n"
-            f"<!-- END REQUEST -->"
-        )
-        progress_report = LLMMethods.openai_extract_arguments(prompt, update_progress)
-        return progress_report
-
-    def implement_thought(self, thought: str, summary: str) -> tuple[str, dict[str, any], str]:
+    def implement_thought(self, thought: str, summary: str) -> ToolCall:
         try:
-            # includes tool_name, args (done if tool_name == "finalize")
-            action, arguments = self.get_action(thought, summary)
+            docstring_dict = LLMMethods.openai_extract_arguments(thought, docstring_schema, strict=True, model="gpt-4-0613")
 
-        except ToolCreationException as e:
-            return "create_tool", e.data, f"{e.__cause__ if e.__cause__ else e}"
+        except ExtractionException as e:
+            raise ToolSelectionException("Error while extracting docstring.") from e
 
-        try:
-            # selection and execution must be combined to be able to repeat if creation or execution fails
-            observation = self.perform_action(action, arguments)
+        docstring = compose_docstring(docstring_dict)
+        tool_name = LLMMethods.select_tool_name(self.toolbox, docstring)
+        if tool_name is not None:
+            print(f"{colorama.Back.RED}Tool:{colorama.Style.RESET_ALL}")
+            tool = self.toolbox.get_tool_from_name(tool_name)
+            tool_schema = self.toolbox.get_schema_from_name(tool_name)
+            arguments = LLMMethods.openai_extract_arguments(summary, tool_schema, model="gpt-3.5-turbo")
+            tool_call = self.processor.apply_tool(tool, arguments, False)
+            return tool_call
 
-        except ToolApplicationException as e:
-            return f"apply_tool", e.data, f"{e.__cause__ if e.__cause__ else e}"
+        tool_call = self.processor.apply_new_tool(summary, docstring_dict)
+        return tool_call
 
-        return action, arguments, observation
+    def _process_request(self, project_name: str, request: str, progress: dict[str, any], facts_db: hyperdb.HyperDB, history: list[dict[str, any]]) -> str:
+        # "gpt-3.5-turbo-16k-0613", "gpt-4-32k-0613", "gpt-4-0613", "gpt-3.5-turbo-0613"
 
-    def get_action(self, thought: str, summary: str) -> tuple[str, dict[str, any]]:
-        # given the thought and the summary, what is the next action to take?
-        # 1. generate the docstring for a function that implements the thought
-        # 2. search in the toolbox for a tool that matches the docstring
-        # 3. if no tool is found, create a new tool (check it. if it fails, raise ToolCreationException(data={"docstring": docstring}))
-        raise NotImplementedError()
+        last_action = ""
+        last_step = "No step has been taken yet."
 
-    def perform_action(self, action: str, arguments: dict[str, any]) -> str:
-        # perform the action with the given arguments and return the observation
-        raise NotImplementedError()
+        while not progress["is_done"]:
+            data_prompt = {"request": request, "last_step": last_step}
+            prompt = (
+                f"```json\n"
+                f"{json.dumps(data_prompt, indent=4, sort_keys=True)}\n"
+                f"```"
+            )
+            progress = LLMMethods.openai_extract_arguments(prompt, proceed, history=history, model="gpt-3.5-turbo-0613")
+            if progress["is_done"]:
+                break
 
-    def append_to_history(self, project_name: str, history: hyperdb.HyperDB(), fact: str) -> None:
-        embedding, = get_embeddings([fact])
-        no_facts = len(history.documents)
-        fact_json = json.dumps(
-            {"fact": fact, "index": no_facts}
-        )
-        history.add_document(fact_json, embedding)
-        history.save("facts_db.pickle.gz")
-        project_directory = os.path.join("projects/", project_name)
-        history_path = os.path.join(project_directory, "history.json")
-        with open(history_path, mode="a") as file:
-            json.dump(fact, file)
-            file.write("\n")
+            if 0 < len(last_action):
+                self.toolbox.update_tool_stats(last_action, progress["was_last_action_effective"])
 
-    def read_project_data(self, project_name: str | None) -> tuple[hyperdb.HyperDB(), dict[str, any]]:
-        project_directory = os.path.join("projects/", project_name)
-        db = hyperdb.HyperDB()
+            thought = progress["thought"]
+            print(
+                f"{colorama.Back.RED}Thought:{colorama.Style.RESET_ALL}\n"
+                f"{colorama.Fore.RED}{thought}{colorama.Style.RESET_ALL}"
+            )
 
-        if project_name is None:
-            project_name = get_date_name()
-            self.main_logger.info(f"Starting new project '{project_name}'.")
-            os.makedirs(project_directory)
-            return db, {"report": "No progress yet.", "done": False}
+            if len(facts_db.documents) < 1:
+                summary = (
+                    f"{request}\n\n"
+                    f"{thought}"
+                )
+            else:
+                summary = self.summarize(facts_db, thought)
 
-        db.load("facts_db.pickle.gz")
-        self.main_logger.info(f"Continuing project '{project_name}'.")
-        progress = self.read_progress(project_directory)
-        return db, progress
+            tool_call = self.implement_thought(thought, summary)
+            print(
+                f"{colorama.Back.RED}Observation:{colorama.Style.RESET_ALL}\n"
+                f"{colorama.Fore.RED}{tool_call.output}{colorama.Style.RESET_ALL}"
+            )
+            fact = self.naturalize(thought, tool_call)
 
-    def read_progress(self, project_directory: str) -> dict[str, any]:
-        progress_path = os.path.join(project_directory, "progress.json")
-        with open(progress_path, mode="r") as file:
-            progress = json.load(file)
-            assert isinstance(progress, dict)
-        return progress
+            last_action = tool_call.tool_name
+            self._save_project(project_name, request, progress, facts_db, fact, history)
+
+        return progress["report"]

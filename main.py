@@ -23,5 +23,5 @@ if __name__ == "__main__":
     print(request)
     print()
     perpetual = PerpetualAgent()
-    response = perpetual.respond(request)
+    response = perpetual.new_project(request)
     print(response)
