@@ -91,15 +91,19 @@ class StepProcessor:
         for i in range(self.implementation_attempts):
             print(f"{colorama.Back.YELLOW}New tool:{colorama.Style.RESET_ALL}")
 
+            new_tool_code = self._make_code(message_history)
+            new_tool_code = insert_docstring(new_tool_code, docstring)
+
             try:
-                new_tool_code = self._make_code(message_history)
-                new_tool_code = insert_docstring(new_tool_code, docstring)
                 tmp_tool = self.toolbox.get_temp_tool_from_code(new_tool_code, docstring_dict)
 
             except Exception as e:
                 msg = f"Tool creation failed: {e} ({i + 1} of {self.implementation_attempts} attempts)"
                 LOGGER.error(msg)
                 print(f"{colorama.Back.RED}{colorama.Style.DIM}{msg}{colorama.Style.RESET_ALL}")
+                message_history.append(
+                    {"role": "user", "content": format_exc()}
+                )
                 continue
 
             try:
@@ -113,7 +117,7 @@ class StepProcessor:
                 continue
 
             try:
-                arguments = LLMMethods.openai_extract_arguments(text, tool_schema, model="gpt-3.5-turbo-0613")
+                arguments = LLMMethods.openai_extract_arguments(text, tool_schema)
 
             except ExtractionException as e:
                 del tmp_tool
@@ -136,6 +140,7 @@ class StepProcessor:
                 message_history.append(
                     {"role": "user", "content": format_exc()}
                 )
+                continue
 
         return ToolCall("create_tool", {"description": docstring}, f"Tool creation failed after {self.implementation_attempts} attempts.")
 
@@ -209,6 +214,7 @@ class PerpetualAgent:
         with open(history_path, mode="a") as file:
             for each_message in history:
                 json.dump(each_message, file)
+                file.write("\n")
 
     def _save_facts(self, thought: str, tool_call: ToolCall, facts_db: hyperdb.HyperDB, project_directory: str) -> None:
         no_facts = len(facts_db.documents)
@@ -325,7 +331,7 @@ class PerpetualAgent:
         print(f"{colorama.Back.YELLOW}Tool:{colorama.Style.RESET_ALL}")
         tool = self.toolbox.get_tool_from_name(tool_name)
         tool_schema = self.toolbox.get_schema_from_name(tool_name)
-        arguments = LLMMethods.openai_extract_arguments(summary, tool_schema, model="gpt-3.5-turbo")
+        arguments = LLMMethods.openai_extract_arguments(summary, tool_schema)
         try:
             tool_call = self.processor.apply_tool(tool, arguments)
 
@@ -373,10 +379,13 @@ class PerpetualAgent:
                 f"{colorama.Back.CYAN}Observation:{colorama.Style.RESET_ALL}\n"
                 f"{colorama.Fore.CYAN}{tool_call.output}{colorama.Style.RESET_ALL}"
             )
-            self.last_fact = self._naturalize(thought, tool_call)
-            # if len(tool_output) >= 5_000:
-            #   naturalize and shorten tool output for summary
-            #   segment and naturalize for long term memory
+            if tool_call.tool_name in {"reject", "create_tool", "tool_execution"}:
+                self.last_fact = LLMMethods.naturalize(thought, tool_call.output, model="gpt-3.5-turbo")
+            else:
+                self.last_fact = self._naturalize(thought, tool_call)
+                # if len(tool_output) >= 5_000:
+                #   naturalize and shorten tool output for summary
+                #   segment and naturalize for long term memory
 
             self.last_action = tool_call.tool_name
             self._save_state(thought, tool_call, self.history[:-2])

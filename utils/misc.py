@@ -82,7 +82,7 @@ def insert_docstring(func_code: str, docstring: str) -> str:
 def compose_docstring(docstring_data: dict[str, any]) -> str:
     args_positional = [each_arg for each_arg in docstring_data["args"] if not each_arg["is_keyword_argument"]]
     args_keyword = [each_arg for each_arg in docstring_data["args"] if each_arg["is_keyword_argument"]]
-
+    # todo: example arguments and return_value and up as string insearch of actual type
     arg_lines = list()
     for each_arg in args_positional:
         one_line_description = " ".join(each_arg["description"].splitlines())
@@ -108,16 +108,20 @@ def compose_docstring(docstring_data: dict[str, any]) -> str:
         args_str = "\n".join(arg_lines)
 
     example_args = ", ".join(
-        [f"{each_arg['example_value']!r}" for each_arg in args_positional] +
-        [f"{each_kwarg['name']}={each_kwarg['example_value']!r}" for each_kwarg in args_keyword]
+        [f"\"{each_arg['example_value']}\"" if each_arg["python_type"] == "str" else f"{each_arg['example_value']}" for each_arg in args_positional] +
+        [f"{each_kwarg['name']}=\"{each_kwarg['example_value']}\"" if each_kwarg["python_type"] == "str" else f"{each_kwarg['name']}={each_kwarg['example_value']}"
+         for each_kwarg in args_keyword]
     )
 
     return_value = docstring_data["return_value"]
-    if return_value['python_type'] == "None":
+    if return_value["python_type"] == "None":
         example_return_str = ""
         return_str = "None"
     else:
-        example_return_str = f"    {return_value['example_value']!r}\n"
+        if return_value["python_type"] == "str":
+            example_return_str = f"    '{return_value['example_value']}'\n"
+        else:
+            example_return_str = f"    {return_value['example_value']}\n"
         one_line_description = ' '.join(return_value['description'].splitlines())
         return_str = f"{return_value['python_type']}: {one_line_description}"
 

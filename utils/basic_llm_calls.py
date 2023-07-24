@@ -1,4 +1,5 @@
 # coding=utf-8
+import json
 import time
 from traceback import format_exc
 
@@ -36,7 +37,7 @@ def num_tokens_from_messages(messages: list[dict[str, any]], model: str = "gpt-3
         encoding = tiktoken.encoding_for_model(model)
 
     except KeyError:
-        print("Warning: model not found. Using cl100k_base encoding.")
+        LOGGER.warning("model not found. Using cl100k_base encoding.")
         encoding = tiktoken.get_encoding("cl100k_base")
 
     if model in {
@@ -55,11 +56,11 @@ def num_tokens_from_messages(messages: list[dict[str, any]], model: str = "gpt-3
         tokens_per_name = -1  # if there's a name, the role is omitted
 
     elif "gpt-3.5-turbo" in model:
-        print("Warning: gpt-3.5-turbo may update over time. Returning num tokens assuming gpt-3.5-turbo-0613.")
+        LOGGER.warning("gpt-3.5-turbo may update over time. Returning num tokens assuming gpt-3.5-turbo-0613.")
         return num_tokens_from_messages(messages, model="gpt-3.5-turbo-0613")
 
     elif "gpt-4" in model:
-        print("Warning: gpt-4 may update over time. Returning num tokens assuming gpt-4-0613.")
+        LOGGER.warning("gpt-4 may update over time. Returning num tokens assuming gpt-4-0613.")
         return num_tokens_from_messages(messages, model="gpt-4-0613")
 
     else:
@@ -72,7 +73,8 @@ def num_tokens_from_messages(messages: list[dict[str, any]], model: str = "gpt-3
     for message in messages:
         num_tokens += tokens_per_message
         for key, value in message.items():
-            num_tokens += len(encoding.encode(value))
+            value_str = str(value)
+            num_tokens += len(encoding.encode(value_str))
             if key == "name":
                 num_tokens += tokens_per_name
     num_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
@@ -137,11 +139,12 @@ def openai_chat(function_id: str, tokens_reserved: int = 1_024, ack: bool = True
         "gpt-3.5-turbo":             4_096,
     }
 
+    messages = kwargs.pop("messages")
+    model = kwargs.pop("model")
+
     while True:
         for i in range(5):
             try:
-                messages = kwargs.pop("messages")
-                model = kwargs.pop("model")
                 token_limit = token_limits[model]
                 messages_truncated = truncate_messages(token_limit, tokens_reserved, messages, model_name=model)
                 LOGGER.info(f"Calling OpenAI API: {function_id}")

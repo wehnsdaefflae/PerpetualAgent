@@ -130,11 +130,11 @@ class ToolBox:
 
             if t.__origin__ == dict:
                 if t.__args__[0] != str:
-                    raise ValueError("Dictionary keys must be strings")
+                    raise SchemaExtractionException("Dictionary keys must be strings")
 
                 return {"type": "object"}
 
-        raise ValueError(f"Unsupported type: {t}")
+        raise SchemaExtractionException(f"Unsupported type: {t}")
 
     def get_tool_schema(self, code: str, docstring_dict: dict[str, any]) -> dict[str, any]:
         # todo: check:

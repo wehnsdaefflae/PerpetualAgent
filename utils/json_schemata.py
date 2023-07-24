@@ -155,7 +155,7 @@ docstring_schema = {
                             "type": "string"
                         },
                         "python_type": {
-                            "description": "The type of the argument.",
+                            "description": "The type of the argument. Only built-in types are allowed.",
                             "type": "string"
                         },
                         "is_keyword_argument": {
@@ -181,7 +181,7 @@ docstring_schema = {
                 "description": "A dictionary describing the function's return value. Empty if the function does not return anything.",
                 "properties": {
                     "python_type": {
-                        "description": "The type of the return value. `None` if the function does not return anything.",
+                        "description": "The type of the return value. Only built-in types are allowed. `None` if the function does not return anything.",
                         "type": "string"
                     },
                     "description": {
