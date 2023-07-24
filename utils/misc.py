@@ -4,6 +4,7 @@ import datetime
 import re
 
 import logging
+from typing import Generator
 
 from utils.logging_handler import logging_handlers
 
@@ -135,6 +136,39 @@ def compose_docstring(docstring_data: dict[str, any]) -> str:
         f"Returns:\n"
         f"    {return_str}\n"
     )
+
+
+def segment_text(text: str, segment_length: int = 500, overlap: int = 100, truncation_sign: str = "[...]") -> Generator[str, None, None]:
+    len_t = len(text)
+    if segment_length >= len_t:
+        yield text
+        return
+
+    len_s = len(truncation_sign)
+    cursor = 0
+    while cursor < len_t:
+        if cursor < 1:
+            cursor_end = cursor + segment_length - len_s
+            new_cursor = cursor_end - overlap
+            if cursor >= new_cursor:
+                raise ValueError("Segment length is too short.")
+            segment = f"{text[cursor:cursor_end]}{truncation_sign}"
+            cursor = new_cursor
+            yield segment
+
+        elif cursor + segment_length < len_t:
+            cursor_end = cursor + segment_length - 2 * len_s
+            new_cursor = cursor_end - overlap
+            if cursor >= new_cursor:
+                raise ValueError("Segment length is too short.")
+            segment = f"{truncation_sign}{text[cursor:cursor_end]}{truncation_sign}"
+            cursor = new_cursor
+            yield segment
+
+        else:
+            segment = f"{truncation_sign}{text[cursor:]}"
+            yield segment
+            return
 
 
 def get_date_name() -> str:

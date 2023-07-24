@@ -49,7 +49,10 @@ class ToolBox:
 
         self.logger.info(f"Initializing database with {len(tool_names)} tools")
         docstrings = [self.get_docstring_dict(each_name) for each_name in tool_names]
-        descriptions = [compose_docstring(each_docstring) for each_docstring in docstrings]
+        descriptions = list()
+        for each_docstring in docstrings:
+            description = self.description_from_docstring_dict(each_docstring)
+            descriptions.append(description)
         embeddings = get_embeddings(descriptions)
         db.add_documents(tool_names, vectors=embeddings)
         db.save(database_path)
@@ -96,11 +99,14 @@ class ToolBox:
     def save_tool_code(self, code: str, docstring_dict: dict[str, any], is_temp: bool) -> None:
         self._save_tool_code(code, docstring_dict, is_temp=is_temp)
         if not is_temp:
-            docstring = compose_docstring(docstring_dict)
-            embedding, = get_embeddings([docstring])
+            description = self.description_from_docstring_dict(docstring_dict)
+            embedding, = get_embeddings([description])
             tool_name = docstring_dict["name"]
-            self.vector_db.add_document(tool_name, embedding)
+            self.vector_db.add_document(tool_name, vector=embedding)
             self.vector_db.save(self.database_path)
+
+    def description_from_docstring_dict(self, docstring_dict: dict[str, any]) -> str:
+        return docstring_dict["summary"] + "\n" + docstring_dict["description"]
 
     @staticmethod
     def _type_to_schema(t: any) -> dict[str, any]:
@@ -137,7 +143,13 @@ class ToolBox:
 
         raise ValueError(f"Unsupported type: {t}")
 
-    def get_schema_from_code(self, code: str, docstring_dict: dict[str, any]) -> dict[str, any]:
+    def get_tool_schema(self, code: str, docstring_dict: dict[str, any]) -> dict[str, any]:
+        # todo: check:
+        #   1. tool_name,
+        #   2. argument dict list with name, type, and example,
+        #   3. keyword argument dict from name to type, default, and example,
+        #   4. return dict with type and example
+
         args_docstring = docstring_dict["args"]
 
         tool = self.get_temp_tool_from_code(code, docstring_dict)
@@ -191,7 +203,7 @@ class ToolBox:
     def get_schema_from_name(self, name: str) -> dict[str, any]:
         code = self.get_code_from_name(name)
         docstring_dict = self.get_docstring_dict(name)
-        schema = self.get_schema_from_code(code, docstring_dict)
+        schema = self.get_tool_schema(code, docstring_dict)
         return schema
 
     def get_description_from_name(self, name: str) -> str:
