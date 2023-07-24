@@ -1,4 +1,5 @@
 # coding=utf-8
+from __future__ import annotations
 import dataclasses
 import json
 import logging
@@ -150,7 +151,7 @@ class StepProcessor:
 
 
 class PerpetualAgent:
-    def __init__(self) -> None:
+    def __init__(self, request: str, _previous_state: tuple[hyperdb.HyperDB, list[dict[str, any]], str] | None = None) -> None:
         self.main_logger = logging.getLogger()
         self.main_logger.setLevel(logging.INFO)
         for each_handler in logging_handlers():
@@ -158,6 +159,24 @@ class PerpetualAgent:
 
         self.toolbox = ToolBox("tools/")
         self.processor = StepProcessor(self.toolbox)
+
+        self.request = request
+        self.facts_db, self.history, self.project_name = self.__initialize_new_project() if _previous_state is None else _previous_state
+
+        self.progress = {
+            "report": "No progress yet.",
+            "was_step_effective": False,
+            "is_done": False,
+            "thought": "I should initiate the first step to fulfill the request."
+        }
+
+        self.last_action = ""
+        self.last_step = "No step has been taken yet."
+
+    @staticmethod
+    def load_project(project_name: str) -> PerpetualAgent:
+        previous_state = PerpetualAgent.__read_project_data(project_name)
+        return PerpetualAgent(project_name, _previous_state=previous_state)
 
     @staticmethod
     def _read_facts_db(project_directory: str) -> hyperdb.HyperDB:
@@ -178,14 +197,6 @@ class PerpetualAgent:
         return history
 
     @staticmethod
-    def _read_progress(project_directory: str) -> dict[str, any]:
-        progress_path = os.path.join(project_directory, "progress.json")
-        with open(progress_path, mode="r") as file:
-            progress = json.load(file)
-            assert isinstance(progress, dict)
-        return progress
-
-    @staticmethod
     def _read_request(project_directory: str) -> str:
         request_path = os.path.join(project_directory, "request.txt")
         with open(request_path, mode="r") as file:
@@ -194,15 +205,10 @@ class PerpetualAgent:
 
     @staticmethod
     def _save_history(history: list[dict[str, any]], project_directory: str) -> None:
-        history_path = os.path.join(project_directory, "history.json")
-        with open(history_path, mode="w") as file:
-            json.dump(history, file, indent=4, sort_keys=True)
-
-    @staticmethod
-    def _save_progress(progress: dict[str, any], project_directory: str) -> None:
-        progress_path = os.path.join(project_directory, "progress.json")
-        with open(progress_path, mode="w") as file:
-            json.dump(progress, file, indent=4, sort_keys=True)
+        history_path = os.path.join(project_directory, "history.jsonl")
+        with open(history_path, mode="a") as file:
+            for each_message in history:
+                json.dump(each_message, file)
 
     @staticmethod
     def _save_fact(fact: str, facts_db: hyperdb.HyperDB, project_directory: str) -> None:
@@ -216,7 +222,6 @@ class PerpetualAgent:
         facts_path = os.path.join(project_directory, "facts.jsonl")
         with open(facts_path, mode="a") as file:
             file.write(fact_json)
-            file.write("\n")
 
     @staticmethod
     def _save_request(request: str, project_directory: str) -> None:
@@ -224,25 +229,22 @@ class PerpetualAgent:
         with open(request_path, mode="w") as file:
             file.write(request)
 
-    def _initialize_new_project(self) -> tuple[hyperdb.HyperDB(), list[dict[str, any]], dict[str, any], str]:
+    def __initialize_new_project(self) -> tuple[hyperdb.HyperDB(), list[dict[str, any]], str]:
         project_name = get_date_name()
         self.main_logger.info(f"Starting new project '{project_name}'.")
         facts_db = hyperdb.HyperDB()
-        progress = {"report": "No progress yet.", "eas_step_effective": False, "is_done": False, "thought": "I should initiate the first step to fulfill the request."}
         history = list()
-        return facts_db, history, progress, project_name
+        return facts_db, history, project_name
 
-    def _read_project_data(self, project_name: str) -> tuple[hyperdb.HyperDB(), list[dict[str, any]], dict[str, any], str]:
+    @staticmethod
+    def __read_project_data(project_name: str) -> tuple[hyperdb.HyperDB(), list[dict[str, any]], str]:
         project_directory = os.path.join("projects/", project_name)
-        self.main_logger.info(f"Continuing project from '{project_directory}'.")
-
         db = PerpetualAgent._read_facts_db(project_directory)
-        progress = PerpetualAgent._read_progress(project_directory)
         history = PerpetualAgent._read_history(project_directory)
         request = PerpetualAgent._read_request(project_directory)
-        return db, history, progress, request
+        return db, history, request
 
-    def _save_project(self, project_name: str, request: str, progress: dict[str, any], facts_db: hyperdb.HyperDB(), fact: str, history: list[dict[str, any]]) -> None:
+    def _save_project(self, project_name: str, request: str, facts_db: hyperdb.HyperDB(), fact: str, history: list[dict[str, any]]) -> None:
         project_directory = os.path.join("projects/", project_name)
         self.main_logger.info(f"Starting project at '{project_directory}'.")
 
@@ -250,30 +252,21 @@ class PerpetualAgent:
 
         PerpetualAgent._save_request(request, project_directory)
         PerpetualAgent._save_fact(fact, facts_db, project_directory)
-        PerpetualAgent._save_progress(progress, project_directory)
         PerpetualAgent._save_history(history, project_directory)
 
-    def load_project(self, project_name: str) -> str:
-        facts_db, history, progress, request = self._read_project_data(project_name)
-        return self._process_request(project_name, request, progress, facts_db, history)
-
-    def new_project(self, request: str) -> str:
-        facts_db, history, progress, project_name = self._initialize_new_project()
-        return self._process_request(project_name, request, progress, facts_db, history)
-
-    def summarize(self, facts_db: hyperdb.HyperDB(), thought: str, n: int = 5) -> str:
+    def _summarize(self, thought: str, n: int = 5) -> str:
         embedding, = get_embeddings([thought])
-        no_documents = len(facts_db.documents)
+        no_documents = len(self.facts_db.documents)
         document_indices, fitnesses = hyper_SVM_ranking_algorithm_sort(
-            facts_db.vectors,
+            self.facts_db.vectors,
             numpy.array(embedding),
             top_k=no_documents,
-            metric=facts_db.similarity_metric
+            metric=self.facts_db.similarity_metric
         )
 
         new_fitness = list()
         for each_index, each_fitness in zip(document_indices, fitnesses):
-            each_document = facts_db.documents[each_index]
+            each_document = self.facts_db.documents[each_index]
             each_dict = json.loads(each_document)
             each_index = each_dict["index"]
             backwards_index = no_documents - each_index
@@ -324,25 +317,22 @@ class PerpetualAgent:
         tool_call = self.processor.apply_new_tool(summary, docstring_dict)
         return tool_call
 
-    def _process_request(self, project_name: str, request: str, progress: dict[str, any], facts_db: hyperdb.HyperDB, history: list[dict[str, any]]) -> str:
+    def process(self) -> str:
         # "gpt-3.5-turbo-16k-0613", "gpt-4-32k-0613", "gpt-4-0613", "gpt-3.5-turbo-0613"
 
-        last_action = ""
-        last_step = "No step has been taken yet."
-
-        while not progress["is_done"]:
-            data_prompt = {"request": request, "last_step": last_step}
+        while not self.progress["is_done"]:
+            data_prompt = {"request": self.request, "last_step": self.last_step}
             prompt = (
                 f"```json\n"
                 f"{json.dumps(data_prompt, indent=4, sort_keys=True)}\n"
                 f"```"
             )
-            progress = LLMMethods.openai_extract_arguments(prompt, proceed, history=history, model="gpt-4-0613")
+            progress = LLMMethods.openai_extract_arguments(prompt, proceed, history=self.history, model="gpt-4-0613")
             if progress["is_done"]:
                 break
 
-            if 0 < len(last_action):
-                self.toolbox.update_tool_stats(last_action, progress["was_last_action_effective"])
+            if 0 < len(self.last_action):
+                self.toolbox.update_tool_stats(self.last_action, progress["was_last_action_effective"])
 
             thought = progress["thought"]
             print(
@@ -350,13 +340,13 @@ class PerpetualAgent:
                 f"{colorama.Fore.BLUE}{thought}{colorama.Style.RESET_ALL}"
             )
 
-            if len(facts_db.documents) < 1:
+            if len(self.facts_db.documents) < 1:
                 summary = (
-                    f"{request}\n\n"
+                    f"{self.request}\n\n"
                     f"{thought}"
                 )
             else:
-                summary = self.summarize(facts_db, thought)
+                summary = self._summarize(thought)
 
             tool_call = self.implement_thought(thought, summary)
             print(
@@ -365,7 +355,7 @@ class PerpetualAgent:
             )
             fact = self.naturalize(thought, tool_call)
 
-            last_action = tool_call.tool_name
-            self._save_project(project_name, request, progress, facts_db, fact, history)
+            self.last_action = tool_call.tool_name
+            self._save_project(self.project_name, self.request, self.facts_db, fact, self.history[:-2])
 
-        return progress["report"]
+        return self.progress["report"]
