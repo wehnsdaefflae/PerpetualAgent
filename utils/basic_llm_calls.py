@@ -1,5 +1,4 @@
 # coding=utf-8
-import logging
 import time
 from traceback import format_exc
 
@@ -8,29 +7,22 @@ from openai.openai_object import OpenAIObject
 from sentence_transformers import SentenceTransformer
 import tiktoken
 
-from utils.logging_handler import logging_handlers
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-handlers = logging_handlers()
-for each_handler in handlers:
-    logger.addHandler(each_handler)
+from utils.misc import LOGGER
 
 
 def openai_chat_deprecated(function_id: str, ack: bool = True, *args: any, **kwargs: any) -> OpenAIObject:
     while True:
         for i in range(5):
             try:
-                logger.info(f"Calling OpenAI API: {function_id}")
-                logger.debug(f"OpenAI API: args={args}, kwargs={kwargs}")
+                LOGGER.info(f"Calling OpenAI API: {function_id}")
+                LOGGER.debug(f"OpenAI API: args={args}, kwargs={kwargs}")
                 response = openai.ChatCompletion.create(*args, **kwargs)
                 return response
 
             except Exception as e:
                 msg = f"Error {e}. Retrying chat completion {i + 1} of 5"
-                logger.error(msg)
-                logger.debug(format_exc())
+                LOGGER.error(msg)
+                LOGGER.debug(format_exc())
                 time.sleep(1)
                 continue
 
@@ -113,7 +105,7 @@ def truncate_messages(token_limit: int, tokens_reserved: int, messages: list[dic
     message_tokens = num_tokens_from_messages(messages, model_name)
     too_much = max(message_tokens - adjusted_token_limit, 0)
     while 0 < too_much:
-        logger.info(f"Truncating messages. Removing {too_much} tokens in total.")
+        LOGGER.info(f"Truncating messages. Removing {too_much} tokens in total.")
         first_message = messages[0]
         tokens_in_message = num_tokens_from_messages([first_message], model_name)
         if tokens_in_message >= too_much:
@@ -152,14 +144,14 @@ def openai_chat(function_id: str, tokens_reserved: int = 1_024, ack: bool = True
                 model = kwargs.pop("model")
                 token_limit = token_limits[model]
                 messages_truncated = truncate_messages(token_limit, tokens_reserved, messages, model_name=model)
-                logger.info(f"Calling OpenAI API: {function_id}")
+                LOGGER.info(f"Calling OpenAI API: {function_id}")
                 response = openai.ChatCompletion.create(*args, messages=messages_truncated, model=model, **kwargs)
                 return response
 
             except Exception as e:
                 msg = f"Error {e}. Retrying chat completion {i + 1} of 5"
-                logger.error(msg)
-                logger.debug(format_exc())
+                LOGGER.error(msg)
+                LOGGER.debug(format_exc())
                 time.sleep(1)
                 continue
 
@@ -194,7 +186,7 @@ def get_embeddings(segments: list[str]) -> list[list[float]]:
 
             except Exception as e:
                 msg = f"Error {e}. Retrying embedding {i + 1} of 5"
-                logger.error(format_exc())
+                LOGGER.error(format_exc())
                 print(msg)
                 time.sleep(1)
                 continue

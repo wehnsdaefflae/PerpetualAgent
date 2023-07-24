@@ -3,15 +3,13 @@ import json
 import os
 import types
 from typing import Union
-import logging
 import ast
 import importlib.util
 
 import hyperdb
 
 from utils.basic_llm_calls import get_embeddings
-from utils.logging_handler import logging_handlers
-from utils.misc import compose_docstring
+from utils.misc import LOGGER
 
 
 class SchemaExtractionException(Exception):
@@ -20,11 +18,6 @@ class SchemaExtractionException(Exception):
 
 class ToolBox:
     def __init__(self, tool_folder: str, database_path: str = "tool_database.pickle.gz", tool_memory: int = 100):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.setLevel(logging.INFO)
-        for each_handler in logging_handlers():
-            self.logger.addHandler(each_handler)
-
         self.tool_folder = tool_folder
         self.tool_memory = tool_memory
         self.database_path = database_path
@@ -40,14 +33,14 @@ class ToolBox:
             tool_names_from_db = sorted(db.documents)
 
             if tool_names_from_db == tool_names:
-                self.logger.info(f"Loading Database already initialized with {len(tool_names)} tools")
+                LOGGER.info(f"Loading Database already initialized with {len(tool_names)} tools")
                 return db
 
             db = hyperdb.HyperDB()
-            self.logger.warning(f"Database already initialized with {len(tool_names_from_db)} tools, but {len(tool_names)} tools found in folder. "
+            LOGGER.warning(f"Database already initialized with {len(tool_names_from_db)} tools, but {len(tool_names)} tools found in folder. "
                                 f"Reinitializing database.")
 
-        self.logger.info(f"Initializing database with {len(tool_names)} tools")
+        LOGGER.info(f"Initializing database with {len(tool_names)} tools")
         docstrings = [self.get_docstring_dict(each_name) for each_name in tool_names]
         descriptions = list()
         for each_docstring in docstrings:
@@ -84,13 +77,13 @@ class ToolBox:
             specification.loader.exec_module(module)
             functions[each_name] = getattr(module, each_name)
 
-        self.logger.info(f"Loaded {len(functions)} tools from {self.tool_folder}")
+        LOGGER.info(f"Loaded {len(functions)} tools from {self.tool_folder}")
         return functions
 
     def _save_tool_code(self, code: str, docstring_dict: dict[str, any], is_temp: bool) -> None:
         tool_name = self.get_name_from_code(code)
         name = "_tmp" if is_temp else tool_name
-        self.logger.info(f"Saving tool {tool_name}...")
+        LOGGER.info(f"Saving tool {tool_name}...")
         with open(os.path.join(self.tool_folder, name + ".py"), mode="w" if is_temp else "x") as file:
             file.write(code)
         with open(os.path.join(self.tool_folder, name + ".json"), mode="w" if is_temp else "x") as file:
@@ -260,7 +253,7 @@ class ToolBox:
         stats_file = self.tool_folder + "_stats.json"
         split_call = tool_call.split("(", maxsplit=1)[0]
         if split_call not in self.get_all_tools():
-            self.logger.warning(f"Could not find tool called \'{split_call}\'.")
+            LOGGER.warning(f"Could not find tool called \'{split_call}\'.")
             return
 
         if os.path.isfile(stats_file):

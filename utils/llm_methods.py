@@ -1,7 +1,6 @@
 # coding=utf-8
 import json
 from abc import ABC
-import logging
 
 import hyperdb
 import numpy
@@ -9,17 +8,9 @@ import openai
 from hyperdb import hyper_SVM_ranking_algorithm_sort
 
 from utils.basic_llm_calls import openai_chat, get_embeddings
-from utils.logging_handler import logging_handlers
-from utils.misc import extract_code_blocks, segment_text
+from utils.misc import extract_code_blocks, segment_text, LOGGER
 from utils.prompts import REQUEST_IMPROVER
 from utils.toolbox import ToolBox
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-handlers = logging_handlers()
-for each_handler in handlers:
-    logger.addHandler(each_handler)
 
 
 class ExtractionException(Exception):
@@ -39,28 +30,28 @@ class LLMMethods(ABC):
     def vector_summarize(request: str, text: str, segment_size: int = 500, overlap: int = 100, nearest_neighbors: int = 5, **parameters: any) -> str:
         # segment text
         segments = list(segment_text(text.strip(), segment_length=segment_size, overlap=overlap))
-        logger.info(f"Summarizing {len(segments)} segments...")
+        LOGGER.info(f"Summarizing {len(segments)} segments...")
 
         no_segments = len(segments)
         if 1 >= no_segments:
             return segments[0]
 
-        logger.info("Initializing database...")
+        LOGGER.info("Initializing database...")
         db = hyperdb.HyperDB()
 
         # embed
-        logger.info("Embedding...")
+        LOGGER.info("Embedding...")
         embeddings = get_embeddings([request] + segments)
 
         request_vector = embeddings[0]
         segment_vectors = embeddings[1:]
 
         # put embeddings in database
-        logger.info("Adding to database...")
+        LOGGER.info("Adding to database...")
         db.add_documents(segments, vectors=segment_vectors)
 
         # get nearest neighbors
-        logger.info("Getting nearest neighbors...")
+        LOGGER.info("Getting nearest neighbors...")
         nearest_neighbor_indices, _ = hyper_SVM_ranking_algorithm_sort(
             db.vectors,
             numpy.array(request_vector),
@@ -153,7 +144,7 @@ class LLMMethods(ABC):
 
         missing_keys = LLMMethods.find_missing_keys(arguments, parameters)
         if 0 < len(missing_keys):
-            logger.warning(f"OpenAI API did not return all the required arguments. Missing: {missing_keys}")
+            LOGGER.warning(f"OpenAI API did not return all the required arguments. Missing: {missing_keys}")
             if strict:
                 raise ExtractionException(f"OpenAI API did not return all the required arguments. Missing: {missing_keys}")
 

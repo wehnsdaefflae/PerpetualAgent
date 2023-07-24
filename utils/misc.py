@@ -2,18 +2,18 @@
 import ast
 import datetime
 import re
-
 import logging
+
 from typing import Generator
 
 from utils.logging_handler import logging_handlers
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
 
 handlers = logging_handlers()
 for each_handler in handlers:
-    logger.addHandler(each_handler)
+    LOGGER.addHandler(each_handler)
 
 
 def truncate(string: str, limit: int, indicator: str = "[...]", at_start: bool = False) -> str:

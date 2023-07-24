@@ -17,7 +17,7 @@ from utils.json_schemata import docstring_schema, proceed
 from utils.llm_methods import LLMMethods, ExtractionException
 from utils.prompts import CODER
 from utils.logging_handler import logging_handlers
-from utils.misc import truncate, extract_code_blocks, insert_docstring, compose_docstring, get_date_name, segment_text
+from utils.misc import truncate, extract_code_blocks, insert_docstring, compose_docstring, get_date_name, segment_text, LOGGER
 from utils.toolbox import ToolBox, SchemaExtractionException
 
 
@@ -48,11 +48,6 @@ class ToolCall:
 
 class StepProcessor:
     def __init__(self, toolbox: ToolBox, implementation_attempts: int = 3, result_limit: int = 2_000) -> None:
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
-        for each_handler in logging_handlers():
-            self.logger.addHandler(each_handler)
-
         self.toolbox = toolbox
         self.implementation_attempts = implementation_attempts
         self.result_limit = result_limit
@@ -103,7 +98,7 @@ class StepProcessor:
 
             except Exception as e:
                 msg = f"Tool creation failed: {e} ({i + 1} of {self.implementation_attempts} attempts)"
-                self.logger.error(msg)
+                LOGGER.error(msg)
                 print(f"{colorama.Back.RED}{colorama.Style.DIM}{msg}{colorama.Style.RESET_ALL}")
                 continue
 
@@ -113,7 +108,7 @@ class StepProcessor:
             except SchemaExtractionException as e:
                 del tmp_tool
                 msg = f"Schema extraction failed: {e} ({i + 1} of {self.implementation_attempts} attempts)"
-                self.logger.error(msg)
+                LOGGER.error(msg)
                 print(f"{colorama.Back.RED}{colorama.Style.DIM}{msg}{colorama.Style.RESET_ALL}")
                 continue
 
@@ -123,7 +118,7 @@ class StepProcessor:
             except ExtractionException as e:
                 del tmp_tool
                 msg = f"Argument extraction failed: {e} ({i + 1} of {self.implementation_attempts} attempts)"
-                self.logger.error(msg)
+                LOGGER.error(msg)
                 print(f"{colorama.Back.RED}{colorama.Style.DIM}{msg}{colorama.Style.RESET_ALL}")
                 continue
 
@@ -136,7 +131,7 @@ class StepProcessor:
             except Exception as e:
                 del tmp_tool
                 msg = f"Tool application failed: {e} ({i + 1} of {self.implementation_attempts} attempts)"
-                self.logger.error(msg)
+                LOGGER.error(msg)
                 print(f"{colorama.Back.RED}{colorama.Style.DIM}{msg}{colorama.Style.RESET_ALL}")
                 message_history.append(
                     {"role": "user", "content": format_exc()}
