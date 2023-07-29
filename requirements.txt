@@ -21,3 +21,5 @@ pardoc~=0.1.0
 guidance==0.0.61
 jsonformer~=0.12.0
 transformers~=4.30.2
+
+chromadb~=0.4.3
