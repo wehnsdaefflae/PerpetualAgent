@@ -1,39 +1,165 @@
 # coding=utf-8
-import logging
+import json
 import time
 from traceback import format_exc
 
 import openai
 from openai.openai_object import OpenAIObject
 from sentence_transformers import SentenceTransformer
+import tiktoken
 
-from utils.logging_handler import logging_handlers
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-handlers = logging_handlers()
-for each_handler in handlers:
-    logger.addHandler(each_handler)
+from utils.misc import LOGGER
 
 
-def openai_chat(function_id: str, *args: any, **kwargs: any) -> OpenAIObject:
+def openai_chat_deprecated(function_id: str, ack: bool = True, *args: any, **kwargs: any) -> OpenAIObject:
     while True:
         for i in range(5):
             try:
-                logger.info(f"Calling OpenAI API: {function_id}")
-                logger.debug(f"OpenAI API: args={args}, kwargs={kwargs}")
+                LOGGER.info(f"Calling OpenAI API: {function_id}")
+                LOGGER.debug(f"OpenAI API: args={args}, kwargs={kwargs}")
                 response = openai.ChatCompletion.create(*args, **kwargs)
                 return response
 
             except Exception as e:
                 msg = f"Error {e}. Retrying chat completion {i + 1} of 5"
-                logger.error(str(format_exc()))
-                print(msg)
+                LOGGER.error(msg)
+                LOGGER.debug(format_exc())
                 time.sleep(1)
                 continue
 
-        input("Chat completion failed. Press enter to retry...")
+        if ack:
+            input("Chat completion failed. Press enter to retry...")
+
+
+def num_tokens_from_messages(messages: list[dict[str, any]], model: str = "gpt-3.5-turbo-0613") -> int:
+    """Return the number of tokens used by a list of messages."""
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+
+    except KeyError:
+        LOGGER.warning("model not found. Using cl100k_base encoding.")
+        encoding = tiktoken.get_encoding("cl100k_base")
+
+    if model in {
+        "gpt-3.5-turbo-0613",
+        "gpt-3.5-turbo-16k-0613",
+        "gpt-4-0314",
+        "gpt-4-32k-0314",
+        "gpt-4-0613",
+        "gpt-4-32k-0613",
+    }:
+        tokens_per_message = 3
+        tokens_per_name = 1
+
+    elif model == "gpt-3.5-turbo-0301":
+        tokens_per_message = 4  # every message follows <|start|>{role/name}\n{content}<|end|>\n
+        tokens_per_name = -1  # if there's a name, the role is omitted
+
+    elif "gpt-3.5-turbo" in model:
+        LOGGER.warning("gpt-3.5-turbo may update over time. Returning num tokens assuming gpt-3.5-turbo-0613.")
+        return num_tokens_from_messages(messages, model="gpt-3.5-turbo-0613")
+
+    elif "gpt-4" in model:
+        LOGGER.warning("gpt-4 may update over time. Returning num tokens assuming gpt-4-0613.")
+        return num_tokens_from_messages(messages, model="gpt-4-0613")
+
+    else:
+        raise NotImplementedError(
+            f"num_tokens_from_messages() is not implemented for model {model}. "
+            f"See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens."
+        )
+
+    num_tokens = 0
+    for message in messages:
+        num_tokens += tokens_per_message
+        for key, value in message.items():
+            value_str = str(value)
+            num_tokens += len(encoding.encode(value_str))
+            if key == "name":
+                num_tokens += tokens_per_name
+    num_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
+    return num_tokens
+
+
+def truncate_content(content: str, model_name: str, target_tokens: int, truncation_sign: str = "[...]") -> str:
+    len_s = len(truncation_sign)
+    encoding = tiktoken.encoding_for_model(model_name)
+    for i in range(len(content)):
+        if i < 1:
+            truncated_content = content
+
+        elif len_s >= i:
+            continue
+
+        else:
+            truncated_content = f"{truncation_sign}{content[-i:]}"
+
+        tokens = encoding.encode(truncated_content)
+        if target_tokens >= len(tokens):
+            return truncated_content
+
+    return ""
+
+
+def truncate_messages(token_limit: int, tokens_reserved: int, messages: list[dict[str, any]], model_name: str) -> list[dict[str, any]]:
+    messages = messages.copy()
+    adjusted_token_limit = token_limit - tokens_reserved
+    message_tokens = num_tokens_from_messages(messages, model_name)
+    too_much = max(message_tokens - adjusted_token_limit, 0)
+    while 0 < too_much:
+        LOGGER.info(f"Truncating messages. Removing {too_much} tokens in total.")
+        first_message = messages[0]
+        tokens_in_message = num_tokens_from_messages([first_message], model_name)
+        if tokens_in_message >= too_much:
+            target_tokens = tokens_in_message - too_much
+            truncated_content = truncate_content(first_message["content"], model_name, target_tokens)
+            if len(truncated_content) < 1:
+                messages.pop(0)
+            else:
+                first_message["content"] = truncated_content
+            break
+
+        else:
+            messages.pop(0)
+
+        message_tokens = num_tokens_from_messages(messages, model_name)
+        too_much = max(message_tokens - adjusted_token_limit, 0)
+
+    return messages
+
+
+def openai_chat(function_id: str, tokens_reserved: int = 1_024, ack: bool = True, *args: any, **kwargs: any) -> OpenAIObject:
+    token_limits = {  # https://platform.openai.com/docs/models/gpt-4
+        "gpt-3.5-turbo-16k":        16_384,
+        "gpt-3.5-turbo-16k-0613":   16_384,
+        "gpt-4-32k-0613":           32_768,
+        "gpt-4-0613":                8_192,
+        "gpt-4":                     8_192,
+        "gpt-3.5-turbo-0613":        4_096,
+        "gpt-3.5-turbo":             4_096,
+    }
+
+    messages = kwargs.pop("messages")
+    model = kwargs.pop("model")
+
+    while True:
+        for i in range(5):
+            try:
+                token_limit = token_limits[model]
+                messages_truncated = truncate_messages(token_limit, tokens_reserved, messages, model_name=model)
+                LOGGER.info(f"Calling OpenAI API: {function_id}")
+                response = openai.ChatCompletion.create(*args, messages=messages_truncated, model=model, **kwargs)
+                return response
+
+            except Exception as e:
+                msg = f"Error {e}. Retrying chat completion {i + 1} of 5"
+                LOGGER.error(msg)
+                LOGGER.debug(format_exc())
+                time.sleep(1)
+                continue
+
+        if ack:
+            input("Chat completion failed. Press enter to retry...")
 
 
 def _get_embeddings(segments: list[str]) -> list[list[float]]:
@@ -63,7 +189,7 @@ def get_embeddings(segments: list[str]) -> list[list[float]]:
 
             except Exception as e:
                 msg = f"Error {e}. Retrying embedding {i + 1} of 5"
-                logger.error(format_exc())
+                LOGGER.error(format_exc())
                 print(msg)
                 time.sleep(1)
                 continue

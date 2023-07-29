@@ -1,7 +1,6 @@
 # coding=utf-8
 import json
 from abc import ABC
-import logging
 
 import hyperdb
 import numpy
@@ -9,17 +8,9 @@ import openai
 from hyperdb import hyper_SVM_ranking_algorithm_sort
 
 from utils.basic_llm_calls import openai_chat, get_embeddings
-from utils.logging_handler import logging_handlers
-from utils.misc import extract_code_blocks
+from utils.misc import extract_code_blocks, segment_text, LOGGER
 from utils.prompts import REQUEST_IMPROVER
 from utils.toolbox import ToolBox
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-handlers = logging_handlers()
-for each_handler in handlers:
-    logger.addHandler(each_handler)
 
 
 class ExtractionException(Exception):
@@ -38,47 +29,47 @@ class LLMMethods(ABC):
     @staticmethod
     def vector_summarize(request: str, text: str, segment_size: int = 500, overlap: int = 100, nearest_neighbors: int = 5, **parameters: any) -> str:
         # segment text
-        len_text = len(text)
-        segments = [text[max(0, i - overlap):min(i + segment_size + overlap, len_text)].strip() for i in range(0, len_text, segment_size)]
-        logger.info(f"Summarizing {len(segments)} segments...")
+        segments = list(segment_text(text.strip(), segment_length=segment_size, overlap=overlap))
+        LOGGER.info(f"Summarizing {len(segments)} segments...")
 
-        for i in range(len(segments)):
-            if i >= 1:
-                segments[i] = "[...]" + segments[i]
+        no_segments = len(segments)
+        if 1 >= no_segments:
+            return segments[0]
 
-            if i < len(segments) - 1:
-                segments[i] += "[...]"
-
-        logger.info("Initializing database...")
+        LOGGER.info("Initializing database...")
         db = hyperdb.HyperDB()
 
         # embed
-        logger.info("Embedding...")
+        LOGGER.info("Embedding...")
         embeddings = get_embeddings([request] + segments)
 
         request_vector = embeddings[0]
         segment_vectors = embeddings[1:]
 
         # put embeddings in database
-        logger.info("Adding to database...")
+        LOGGER.info("Adding to database...")
         db.add_documents(segments, vectors=segment_vectors)
 
         # get nearest neighbors
-        logger.info("Getting nearest neighbors...")
+        LOGGER.info("Getting nearest neighbors...")
         nearest_neighbor_indices, _ = hyper_SVM_ranking_algorithm_sort(
             db.vectors,
             numpy.array(request_vector),
             top_k=nearest_neighbors
         )
 
-        nearest_neighbors = [db.documents[i] for i in nearest_neighbor_indices]
+        nearest_neighbors = [db.documents[i].strip() for i in nearest_neighbor_indices]
         concatenated = "\n\n".join(nearest_neighbors)
 
-        prompt = (f"## Segments\n"
-                  f"{concatenated}\n"
+        prompt = (f"<!-- BEGIN REQUEST>\n"
+                  f"{request.strip()}\n"
+                  f"<!-- END REQUEST>\n"
                   f"\n"
-                  f"## Instruction\n"
-                  f"Summarize the text segments above into one concise and coherent paragraph.")
+                  f"<-- BEGIN SEGMENTS -->\n"
+                  f"{concatenated}\n"
+                  f"<!-- END SEGMENTS -->\n"
+                  f"\n"
+                  f"Summarize the provided segments into one concise, coherent, and complete response to the request above.")
 
         response = LLMMethods.respond(prompt, list(), function_id="summarize", **parameters)
         return response.strip()
@@ -116,11 +107,21 @@ class LLMMethods(ABC):
         return arguments
 
     @staticmethod
-    def openai_extract_arguments(full_description: str, tool_schema: dict[str, any], model="gpt-3.5-turbo-0613", strict: bool = True, **parameters: any) -> dict[str, any]:
+    def openai_extract_arguments(full_description: str,
+                                 tool_schema: dict[str, any],
+                                 history: list[dict[str, any]] | None = None,
+                                 model="gpt-3.5-turbo-0613",
+                                 strict: bool = True,
+                                 **parameters: any) -> dict[str, any]:
+        if history is None:
+            history = list()
+
+        history.append({"role": "user", "content": full_description})
+
         response = openai_chat(
             f"extracting with `{tool_schema['name']}`",
             model=model,
-            messages=[{"role": "user", "content": full_description}],
+            messages=history,
             functions=[tool_schema],
             function_call={"name": tool_schema["name"]},
             **parameters,
@@ -143,10 +144,11 @@ class LLMMethods(ABC):
 
         missing_keys = LLMMethods.find_missing_keys(arguments, parameters)
         if 0 < len(missing_keys):
-            logger.warning(f"OpenAI API did not return all the required arguments. Missing: {missing_keys}")
+            LOGGER.warning(f"OpenAI API did not return all the required arguments. Missing: {missing_keys}")
             if strict:
                 raise ExtractionException(f"OpenAI API did not return all the required arguments. Missing: {missing_keys}")
 
+        history.append(response_message)
         return arguments
 
     @staticmethod
@@ -187,7 +189,7 @@ class LLMMethods(ABC):
         return content.strip()
 
     @staticmethod
-    def naturalize(request: str, tool_schema: dict[str, any], arguments_json: str, result_json: str, **parameters: any) -> str:
+    def openai_naturalize(request: str, tool_schema: dict[str, any], arguments_json: str, result_json: str, **parameters: any) -> str:
         tool_name = tool_schema["name"]
         messages = [
             {"role": "user", "content": request},
@@ -196,11 +198,40 @@ class LLMMethods(ABC):
         ]
 
         response = openai_chat(
-            "naturalize",
+            "openai_naturalize",
             **parameters,
             messages=messages,
             functions=[tool_schema],
             function_call="none",
+        )
+
+        response_message = response.choices[0]["message"]
+        content = response_message["content"]
+        return content.strip()
+
+    @staticmethod
+    def naturalize(request: str, result_str: str, **parameters: any) -> str:
+        prompt = (
+            f"<-- BEGIN REQUEST -->\n"
+            f"{request.strip()}\n"
+            f"<!-- END REQUEST -->\n"
+            f"\n"
+            f"<-- BEGIN RESULT -->\n"
+            f"{result_str.strip()}\n"
+            f"<!-- END RESULT -->\n"
+            f"\n"
+            f"## Instructions\n"
+            f"Formulate a concise, coherent, and complete natural language response to the above request based on the provided result."
+        )
+
+        messages = [
+            {"role": "user", "content": prompt},
+        ]
+
+        response = openai_chat(
+            "naturalize",
+            **parameters,
+            messages=messages,
         )
 
         response_message = response.choices[0]["message"]
@@ -238,7 +269,7 @@ class LLMMethods(ABC):
         return response.strip()
 
     @staticmethod
-    def select_tool_name(toolbox: ToolBox, function_description: str) -> str | None:
+    def select_tool_name(toolbox: ToolBox, function_description: str) -> tuple[str, float]:
         # get embedding for task_description
         embedding, = get_embeddings([function_description])
 
@@ -251,9 +282,4 @@ class LLMMethods(ABC):
         )
 
         tool_name = toolbox.vector_db.documents[document_index]
-        logger.info(f"Selected tool: {tool_name} with fitness {fitness:.2f}")
-
-        if fitness < .9:
-            return None
-
-        return tool_name.strip()
+        return tool_name.strip(), fitness

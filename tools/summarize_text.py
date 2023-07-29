@@ -1,6 +1,5 @@
 # coding=utf-8
-import openai
-
+from utils.basic_llm_calls import openai_chat
 from utils.llm_methods import LLMMethods
 
 
@@ -14,7 +13,6 @@ def summarize_text(text: str, len_summary: int, focus: str | None = None) -> str
         focus_text = f" Focus on {focus}."
 
     instruction = f"Summarize the above text with {len_summary} characters.{focus_text}\n"
-
     if len_text > 5_000:
         text = LLMMethods.vector_summarize(instruction, text, model="gpt-3.5-turbo")
         return text
@@ -26,7 +24,9 @@ def summarize_text(text: str, len_summary: int, focus: str | None = None) -> str
         {"role": "user", "content": prompt}
     ]
 
-    response = openai.ChatCompletion.create(
+    response = openai_chat(
+        "summarize",
+        ack=False,
         model="gpt-3.5-turbo",
         messages=messages
     )

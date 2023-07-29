@@ -104,23 +104,44 @@ progress_schema = {  # prompt requires: request, progress, last_action, last_res
     }
 }
 
+update_progress = {
+    "name": "update_progress",
+    "description": "Takes a report on the current progress in fulfilling the request and updates it with a new fact.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "report": {
+                "description": "Updated progress report with the new fact incorporated.",
+                "type": "string"
+            },
+            "is_done": {
+                "description": "'True' if the request is already completely fulfilled as per the new fact. 'False' if there's any uncertainty or outstanding steps to "
+                               "be performed.",
+                "type": "boolean"
+            }
+        },
+        "required": ["report", "is_done"]
+    }
+}
+
 docstring_schema = {
     "name": "make_docstring",
-    "description": "Generates a Google style docstring for a given function.",
+    "description": "Generates a Google style docstring for a general and versatile function.",
     "parameters": {
         "type": "object",
         "properties": {
             "name": {
-                "description": "A descriptive name for the function.",
+                "description": "A general and versatile name for the function.",
                 "type": "string"
             },
             "summary": {
-                "description": "A one sentence summary of the function without mentioning the name of the function.",
+                "description": "A general and versatile one sentence summary of the function without mentioning the name of the function.",
                 "type": "string"
             },
             "description": {
                 "description": "A brief explanation of the function without mentioning the name of the function. It should be a clear, concise overview of what the "
-                               "function does.",
+                               "function does. The function must be general and versatile so that it can be used in many different contexts. Do not mention particular "
+                               "use cases or contexts. Describe in general what the function does, not how it is done.",
                 "type": "string"
             },
             "args": {
@@ -134,7 +155,7 @@ docstring_schema = {
                             "type": "string"
                         },
                         "python_type": {
-                            "description": "The type of the argument.",
+                            "description": "The type of the argument. Only built-in types are allowed.",
                             "type": "string"
                         },
                         "is_keyword_argument": {
@@ -160,7 +181,7 @@ docstring_schema = {
                 "description": "A dictionary describing the function's return value. Empty if the function does not return anything.",
                 "properties": {
                     "python_type": {
-                        "description": "The type of the return value. `None` if the function does not return anything.",
+                        "description": "The type of the return value. Only built-in types are allowed. `None` if the function does not return anything.",
                         "type": "string"
                     },
                     "description": {
@@ -176,5 +197,36 @@ docstring_schema = {
             }
         },
         "required": ["name", "summary", "description", "args", "return_value"]
+    }
+}
+
+proceed = {
+    "name": "proceed",
+    "description": "Takes in parameters that describe the current progress in fulfilling the request as well as a thought on how to continue.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "report": {
+                "description": "The progress report from your last response, now updated to also cover the last step towards fulfilling the request mentioned in this "
+                               "message.",
+                "type": "string"
+            },
+            "was_step_effective": {
+                "description": "'True' if the last step contributed to fulfilling the request. 'False' if its execution did not result in any progress towards "
+                               "fulfilling the request or if no step has been executed.",
+                "type": "boolean"
+            },
+            "is_done": {
+                "description": "'True' if the request is already completely fulfilled as per the new fact. 'False' if there's any uncertainty or outstanding steps to "
+                               "be performed.",
+                "type": "boolean"
+            },
+            "thought": {
+                "description": "A string that describes an expert's thought on what should be the next single step necessary to fulfill the request given the current "
+                               "progress",
+                "type": "string"
+            }
+        },
+        "required": ["report", "was_step_effective", "is_done", "thought"]
     }
 }

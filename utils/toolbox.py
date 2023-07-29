@@ -3,15 +3,13 @@ import json
 import os
 import types
 from typing import Union
-import logging
 import ast
 import importlib.util
 
 import hyperdb
 
 from utils.basic_llm_calls import get_embeddings
-from utils.logging_handler import logging_handlers
-from utils.misc import compose_docstring
+from utils.misc import LOGGER
 
 
 class SchemaExtractionException(Exception):
@@ -20,11 +18,6 @@ class SchemaExtractionException(Exception):
 
 class ToolBox:
     def __init__(self, tool_folder: str, database_path: str = "tool_database.pickle.gz", tool_memory: int = 100):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.setLevel(logging.INFO)
-        for each_handler in logging_handlers():
-            self.logger.addHandler(each_handler)
-
         self.tool_folder = tool_folder
         self.tool_memory = tool_memory
         self.database_path = database_path
@@ -40,16 +33,19 @@ class ToolBox:
             tool_names_from_db = sorted(db.documents)
 
             if tool_names_from_db == tool_names:
-                self.logger.info(f"Loading Database already initialized with {len(tool_names)} tools")
+                LOGGER.info(f"Loading Database already initialized with {len(tool_names)} tools")
                 return db
 
             db = hyperdb.HyperDB()
-            self.logger.warning(f"Database already initialized with {len(tool_names_from_db)} tools, but {len(tool_names)} tools found in folder. "
+            LOGGER.warning(f"Database already initialized with {len(tool_names_from_db)} tools, but {len(tool_names)} tools found in folder. "
                                 f"Reinitializing database.")
 
-        self.logger.info(f"Initializing database with {len(tool_names)} tools")
+        LOGGER.info(f"Initializing database with {len(tool_names)} tools")
         docstrings = [self.get_docstring_dict(each_name) for each_name in tool_names]
-        descriptions = [compose_docstring(each_docstring) for each_docstring in docstrings]
+        descriptions = list()
+        for each_docstring in docstrings:
+            description = self.description_from_docstring_dict(each_docstring)
+            descriptions.append(description)
         embeddings = get_embeddings(descriptions)
         db.add_documents(tool_names, vectors=embeddings)
         db.save(database_path)
@@ -81,13 +77,13 @@ class ToolBox:
             specification.loader.exec_module(module)
             functions[each_name] = getattr(module, each_name)
 
-        self.logger.info(f"Loaded {len(functions)} tools from {self.tool_folder}")
+        LOGGER.info(f"Loaded {len(functions)} tools from {self.tool_folder}")
         return functions
 
     def _save_tool_code(self, code: str, docstring_dict: dict[str, any], is_temp: bool) -> None:
         tool_name = self.get_name_from_code(code)
         name = "_tmp" if is_temp else tool_name
-        self.logger.info(f"Saving tool {tool_name}...")
+        LOGGER.info(f"Saving tool {tool_name}...")
         with open(os.path.join(self.tool_folder, name + ".py"), mode="w" if is_temp else "x") as file:
             file.write(code)
         with open(os.path.join(self.tool_folder, name + ".json"), mode="w" if is_temp else "x") as file:
@@ -96,11 +92,14 @@ class ToolBox:
     def save_tool_code(self, code: str, docstring_dict: dict[str, any], is_temp: bool) -> None:
         self._save_tool_code(code, docstring_dict, is_temp=is_temp)
         if not is_temp:
-            docstring = compose_docstring(docstring_dict)
-            embedding, = get_embeddings([docstring])
+            description = self.description_from_docstring_dict(docstring_dict)
+            embedding, = get_embeddings([description])
             tool_name = docstring_dict["name"]
-            self.vector_db.add_document(tool_name, embedding)
+            self.vector_db.add_document(tool_name, vector=embedding)
             self.vector_db.save(self.database_path)
+
+    def description_from_docstring_dict(self, docstring_dict: dict[str, any]) -> str:
+        return docstring_dict["summary"] + "\n" + docstring_dict["description"]
 
     @staticmethod
     def _type_to_schema(t: any) -> dict[str, any]:
@@ -131,13 +130,19 @@ class ToolBox:
 
             if t.__origin__ == dict:
                 if t.__args__[0] != str:
-                    raise ValueError("Dictionary keys must be strings")
+                    raise SchemaExtractionException("Dictionary keys must be strings")
 
                 return {"type": "object"}
 
-        raise ValueError(f"Unsupported type: {t}")
+        raise SchemaExtractionException(f"Unsupported type: {t}")
 
-    def get_schema_from_code(self, code: str, docstring_dict: dict[str, any]) -> dict[str, any]:
+    def get_tool_schema(self, code: str, docstring_dict: dict[str, any]) -> dict[str, any]:
+        # todo: check:
+        #   1. tool_name,
+        #   2. argument dict list with name, type, and example,
+        #   3. keyword argument dict from name to type, default, and example,
+        #   4. return dict with type and example
+
         args_docstring = docstring_dict["args"]
 
         tool = self.get_temp_tool_from_code(code, docstring_dict)
@@ -191,7 +196,7 @@ class ToolBox:
     def get_schema_from_name(self, name: str) -> dict[str, any]:
         code = self.get_code_from_name(name)
         docstring_dict = self.get_docstring_dict(name)
-        schema = self.get_schema_from_code(code, docstring_dict)
+        schema = self.get_tool_schema(code, docstring_dict)
         return schema
 
     def get_description_from_name(self, name: str) -> str:
@@ -248,7 +253,7 @@ class ToolBox:
         stats_file = self.tool_folder + "_stats.json"
         split_call = tool_call.split("(", maxsplit=1)[0]
         if split_call not in self.get_all_tools():
-            self.logger.warning(f"Could not find tool called \'{split_call}\'.")
+            LOGGER.warning(f"Could not find tool called \'{split_call}\'.")
             return
 
         if os.path.isfile(stats_file):

@@ -18,10 +18,11 @@ if __name__ == "__main__":
     # request = "How do you remove ticks from a tadpole?"
     # request = "Write a Python function that returns the sum of the first 567 prime numbers that contain the digit 8."
     # request = "Generate a file called 'moon_core.md' that contains a structural analysis of the chemical composition of the core of the moon in markdown syntax."
-    request = "Research five diverse positions on the possibility of artificial consciousness and save them as structured summary in a markdown file."
+    # request = "Research five diverse positions on the possibility of artificial consciousness and save them as structured summary in a markdown file."
+    request = "Develop a new anti cancer drug."
 
     print(request)
     print()
-    perpetual = PerpetualAgent()
-    response = perpetual.respond(request)
+    perpetual = PerpetualAgent(request)
+    response = perpetual.process()
     print(response)
