@@ -219,7 +219,7 @@ class PerpetualAgent:
     def _save_facts(self, thought: str, tool_call: ToolCall, facts_db: hyperdb.HyperDB, project_directory: str) -> None:
         no_facts = len(facts_db.documents)
         facts = list()
-        for i, each_segment in enumerate(segment_text(str(tool_call.output), 1_000)):
+        for i, each_segment in enumerate(segment_text(str(tool_call.output), segment_length=1_000)):
             fact = LLMMethods.naturalize(thought, each_segment, model="gpt-3.5-turbo")
             fact_json = {"content": fact, "index": i + no_facts}
             facts.append(fact_json)
