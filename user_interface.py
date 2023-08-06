@@ -2,6 +2,7 @@
 import datetime
 
 import nicegui
+from nicegui.elements.tabs import Tab
 
 
 def page_layout():
@@ -60,52 +61,39 @@ def page_layout():
             global_memory = nicegui.ui.tab("global", "Global")
 
         with nicegui.ui.tab_panels(tabs, value=local_memory):
-            with nicegui.ui.tab_panel(local_memory):
-                with nicegui.ui.row().classes("justify-between"):
-                    with nicegui.ui.scroll_area().style("width: 45%"):
-                        columns = [
-                            {"name": "fact", "label": "Fact", "field": "fact", "required": True, "align": "left", "type": "text"}
-                        ]
-                        rows = [
-                            {"fact": f"fact {i}"} for i in range(1, 51)
-                        ]
-                        # details (remove?, persist?)
-                        nicegui.ui.table(columns=columns, rows=rows, row_key="fact")
-
-                    with nicegui.ui.scroll_area().style("width: 45%"):
-                        columns = [
-                            {"name": "action", "label": "Action", "field": "action", "required": True, "align": "left", "type": "text"}
-                        ]
-                        rows = [
-                            {"action": f"action {i}"} for i in range(1, 51)
-                        ]
-                        # details (remove?, persist?)
-                        nicegui.ui.table(columns=columns, rows=rows, row_key="action")
+            with nicegui.ui.tab_panel(local_memory).classes("flex") as tab_local:
+                # memory_table()
+                # nicegui.ui.element("div").style("width: 100%; height: 100px; background-color: #ff0000").classes("grow")
+                nicegui.ui.element("div").style("width: 100%; background-color: #ff0000").classes("grow")
 
             with nicegui.ui.tab_panel(global_memory):
-                with nicegui.ui.row().classes("justify-between"):
-                    with nicegui.ui.scroll_area().style("width: 45%"):
-                        columns = [
-                            {"name": "fact", "label": "Fact", "field": "fact", "required": True, "align": "left", "type": "text"}
-                        ]
-                        rows = [
-                            {"fact": f"fact {i}"} for i in range(1, 51)
-                        ]
-                        # details (remove?, persist?)
-                        nicegui.ui.table(columns=columns, rows=rows, row_key="fact")
-
-                    with nicegui.ui.scroll_area().style("width: 45%"):
-                        columns = [
-                            {"name": "action", "label": "Action", "field": "action", "required": True, "align": "left", "type": "text"}
-                        ]
-                        rows = [
-                            {"action": f"action {i}"} for i in range(1, 51)
-                        ]
-                        # details (remove?)
-                        nicegui.ui.table(columns=columns, rows=rows, row_key="action")
+                memory_table()
 
     with nicegui.ui.footer().style('background-color: #3874c8'):
         nicegui.ui.label("Status updates from agents, incl. agent number")
+
+
+def memory_table() -> None:
+    with nicegui.ui.row().classes("justify-between"):
+        with nicegui.ui.scroll_area().style("width: 45%"):
+            columns = [
+                {"name": "fact", "label": "Fact", "field": "fact", "required": True, "align": "left", "type": "text"}
+            ]
+            rows = [
+                {"fact": f"fact {i}"} for i in range(1, 51)
+            ]
+            # details (remove?, persist?)
+            nicegui.ui.table(columns=columns, rows=rows, row_key="fact")
+
+        with nicegui.ui.scroll_area().style("width: 45%"):
+            columns = [
+                {"name": "action", "label": "Action", "field": "action", "required": True, "align": "left", "type": "text"}
+            ]
+            rows = [
+                {"action": f"action {i}"} for i in range(1, 51)
+            ]
+            # details (remove?, persist?)
+            nicegui.ui.table(columns=columns, rows=rows, row_key="action")
 
 
 def main() -> None:
