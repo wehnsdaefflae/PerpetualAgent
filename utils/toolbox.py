@@ -129,7 +129,7 @@ class ToolBox:
                 return {"type": "array", "items": [ToolBox._type_to_schema(i) for i in t.__args__]}
 
             if t.__origin__ == dict:
-                if t.__args__[0] != str:
+                if hasattr(t, "__args__") and t.__args__[0] != str:
                     raise SchemaExtractionException("Dictionary keys must be strings")
 
                 return {"type": "object"}

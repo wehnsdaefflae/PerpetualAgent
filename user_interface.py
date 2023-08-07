@@ -16,7 +16,7 @@ def page_layout():
 
 
 def add_footer() -> Footer:
-    with nicegui.ui.footer().style('background-color: #3874c8') as footer:
+    with nicegui.ui.footer() as footer:
         nicegui.ui.label("Status updates from agents, incl. agent number")
 
     return footer
@@ -102,7 +102,7 @@ def get_main_agent_details() -> Element:
                     nicegui.ui.label(f"natural thought {i}").classes("flex-1 m-3 p-3 bg-blue-300 rounded-lg")
                     nicegui.ui.button("details").classes("mx-5")
                 with nicegui.ui.row().classes("justify-between flex items-center"):
-                    nicegui.ui.label(f"natural result {i}").classes("flex-1 m-3 p-3 bg-yellow-200 rounded-lg")
+                    nicegui.ui.label(f"natural result {i}").classes("flex-1 m-3 p-3 bg-green-300 rounded-lg")
                     nicegui.ui.button("details").classes("mx-5")
                 nicegui.ui.separator().classes("my-2")
 
@@ -143,23 +143,6 @@ def memory_table() -> None:
 
 
 def main() -> None:
-    """
-    with nicegui.ui.row():  # main page
-        with nicegui.ui.column():
-            with nicegui.ui.header():
-                nicegui.ui.label("Agent list")
-            nicegui.ui.button("create new agent", on_click=lambda: nicegui.ui.show_dialog("create new agent"))
-
-        with nicegui.ui.column():
-            with nicegui.ui.header():
-                nicegui.ui.label("Agent details")
-            nicegui.ui.label("agent details")
-
-        with nicegui.ui.column():
-            with nicegui.ui.header():
-                nicegui.ui.label("Agent memory")
-            nicegui.ui.label("memory")
-    """
 
     page_layout()
 
