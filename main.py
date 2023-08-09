@@ -1,4 +1,6 @@
 # coding=utf-8
+import chromadb
+
 from utils.perpetual_agent import PerpetualAgent
 
 
@@ -9,6 +11,8 @@ from utils.perpetual_agent import PerpetualAgent
 # for generic structuring of data
 
 if __name__ == "__main__":
+    vector_database = chromadb.PersistentClient(path="vectors.db")
+
     # request = "Given a list of integers, return the sum of all even numbers."
     # request = "What is today's weather in Bamberg, Germany."
     # request = "Crawl the Google weather site for the current weather conditions in Bamberg, Germany."
@@ -23,6 +27,6 @@ if __name__ == "__main__":
 
     print(request)
     print()
-    perpetual = PerpetualAgent(request)
+    perpetual = PerpetualAgent(request, vector_database)
     response = perpetual.process()
     print(response)

@@ -4,15 +4,14 @@ import dataclasses
 import json
 import logging
 import os
+import time
 import types
 from traceback import format_exc
 
 import colorama
-import hyperdb
-import numpy
-from hyperdb import hyper_SVM_ranking_algorithm_sort
+import chromadb
 
-from utils.basic_llm_calls import openai_chat, get_embeddings
+from utils.basic_llm_calls import openai_chat
 from utils.json_schemata import docstring_schema, proceed
 from utils.llm_methods import LLMMethods, ExtractionException
 from utils.prompts import CODER
@@ -47,6 +46,10 @@ class ToolCall:
 
 
 class StepProcessor:
+    # todo: extract
+    # what does it do?
+    # extract code generation
+
     def __init__(self, toolbox: ToolBox, implementation_attempts: int = 3, result_limit: int = 2_000) -> None:
         self.toolbox = toolbox
         self.implementation_attempts = implementation_attempts
@@ -146,7 +149,7 @@ class StepProcessor:
 
 
 class PerpetualAgent:
-    def __init__(self, request: str, _previous_state: tuple[hyperdb.HyperDB, list[dict[str, any]], str] | None = None) -> None:
+    def __init__(self, request: str, vector_database: chromadb.Client, fact_limit: int = -1, _previous_state: tuple[list[dict[str, any]], str] | None = None) -> None:
         self.main_logger = logging.getLogger()
         self.main_logger.setLevel(logging.INFO)
         for each_handler in logging_handlers():
@@ -156,15 +159,16 @@ class PerpetualAgent:
         self.processor = StepProcessor(self.toolbox)
 
         self.request = request
+        self.vector_database = vector_database
         if _previous_state is None:
-            self.facts_db, self.history, self.project_name = self.__initialize_new_project()
+            self.history, self.project_name = self.__initialize_new_project()
             self.project_directory = os.path.join("projects/", self.project_name)
 
             os.makedirs(self.project_directory)
             PerpetualAgent._save_request(self.request, self.project_directory)
 
         else:
-            self.facts_db, self.history, self.project_name = _previous_state
+            self.history, self.project_name = _previous_state
 
         self.project_directory = os.path.join("projects/", self.project_name)
 
@@ -177,18 +181,6 @@ class PerpetualAgent:
 
         self.last_action = ""
         self.last_fact = "No step has been taken yet."
-
-    @staticmethod
-    def load_project(project_name: str) -> PerpetualAgent:
-        previous_state = PerpetualAgent.__read_project_data(project_name)
-        return PerpetualAgent(project_name, _previous_state=previous_state)
-
-    @staticmethod
-    def _read_facts_db(project_directory: str) -> hyperdb.HyperDB:
-        db = hyperdb.HyperDB()
-        facts_path = os.path.join(project_directory, "facts_db.pickle.gz")
-        db.load(facts_path)
-        return db
 
     @staticmethod
     def _read_history(project_directory: str) -> list[dict[str, any]]:
@@ -216,21 +208,23 @@ class PerpetualAgent:
                 json.dump(each_message, file)
                 file.write("\n")
 
-    def _save_facts(self, thought: str, tool_call: ToolCall, facts_db: hyperdb.HyperDB, project_directory: str) -> None:
-        no_facts = len(facts_db.documents)
-        facts = list()
-        for i, each_segment in enumerate(segment_text(str(tool_call.output), segment_length=1_000, overlap=200)):
-            fact = LLMMethods.naturalize(thought, each_segment, model="gpt-3.5-turbo")
-            fact_json = {"content": fact, "index": i + no_facts}
-            facts.append(fact_json)
+    def _save_facts(self, facts: list[str]) -> None:
+        local_facts: chromadb.api.models.Collection.Collection = self.vector_database.get_collection(f"facts_{self.project_name}")
+        no_facts = local_facts.count()
 
-        embeddings = get_embeddings([each_fact["content"] for each_fact in facts])
-        facts_json = [json.dumps(each_fact) for each_fact in facts]
-        facts_db.add_documents(facts_json, vectors=embeddings)
-        facts_path = os.path.join(project_directory, "facts_db.pickle.gz")
-        facts_db.save(facts_path)
+        local_facts.add(
+            [f"{i}" for i in range(no_facts, no_facts + len(facts))],
+            embeddings=None,
+            metadatas=[{"index": i, "last_retrieved": -1} for i in range(no_facts, no_facts + len(facts))],
+            documents=facts
+        )
 
-        facts_path = os.path.join(project_directory, "facts.jsonl")
+        facts_json = list()
+        for i, each_fact in enumerate(facts):
+            each_fact_json = json.dumps({"content": each_fact, "index": i + no_facts})
+            facts_json.append(each_fact_json)
+
+        facts_path = os.path.join(self.project_directory, "facts.jsonl")
         with open(facts_path, mode="a") as file:
             for each_fact in facts_json:
                 file.write(each_fact)
@@ -242,55 +236,89 @@ class PerpetualAgent:
         with open(request_path, mode="w") as file:
             file.write(request)
 
-    def __initialize_new_project(self) -> tuple[hyperdb.HyperDB(), list[dict[str, any]], str]:
+    def __initialize_new_project(self) -> tuple[list[dict[str, any]], str]:
         project_name = get_date_name()
         self.main_logger.info(f"Starting new project '{project_name}'.")
-        facts_db = hyperdb.HyperDB()
         history = list()
-        return facts_db, history, project_name
+        return history, project_name
 
     @staticmethod
-    def __read_project_data(project_name: str) -> tuple[hyperdb.HyperDB(), list[dict[str, any]], str]:
+    def __read_project_data(project_name: str) -> tuple[list[dict[str, any]], str]:
         project_directory = os.path.join("projects/", project_name)
-        db = PerpetualAgent._read_facts_db(project_directory)
         history = PerpetualAgent._read_history(project_directory)
         request = PerpetualAgent._read_request(project_directory)
-        return db, history, request
+        return history, request
 
     def _save_state(self, thought: str, tool_call: ToolCall, last_exchange: list[dict[str, any]]) -> None:
         self.main_logger.info(f"Starting project at '{self.project_directory}'.")
 
-        self._save_facts(thought, tool_call, self.facts_db, self.project_directory)
+        facts = self._make_facts(thought, tool_call)
+        self._save_facts(facts)
+
         PerpetualAgent._save_messages(last_exchange, self.project_directory)
 
+    def _make_facts(self, thought: str, tool_call: ToolCall) -> list[str]:
+        segments = segment_text(str(tool_call.output), segment_length=1_000, overlap=200)
+
+        facts = list()
+        for i, each_segment in enumerate(segments):
+            each_fact = LLMMethods.naturalize(thought, each_segment, model="gpt-3.5-turbo")
+            facts.append(each_fact)
+
+        return facts
+
     def _summarize_facts(self, thought: str, n: int = 5) -> str:
-        embedding, = get_embeddings([thought])
-        no_documents = len(self.facts_db.documents)
-        document_indices, fitnesses = hyper_SVM_ranking_algorithm_sort(
-            self.facts_db.vectors,
-            numpy.array(embedding),
-            top_k=no_documents,
-            metric=self.facts_db.similarity_metric
+        now = round(time.time())
+
+        global_facts = self.vector_database.get_collection("facts")
+        global_results = global_facts.query(
+            query_texts=thought,
+            n_results=n
         )
+        fact_fitness = {
+            ("global", each_id): {
+                "content": each_fact,
+                "distance": each_distance,
+                "metadata": each_metadata
+            }
+            for each_id, each_fact, each_distance, each_metadata in zip(
+                global_results["ids"], global_results["documents"], global_results["distances"], global_results["metadatas"]
+            )
+        }
 
-        new_fitness = list()
-        for each_index, each_fitness in zip(document_indices, fitnesses):
-            each_document = self.facts_db.documents[each_index]
-            each_dict = json.loads(each_document)
-            each_index = each_dict["index"]
-            backwards_index = no_documents - each_index
-            prioritized_fitness = each_fitness / backwards_index
-            each_dict["prioritized_fitness"] = prioritized_fitness
-            new_fitness.append(each_dict)
+        local_facts = self.vector_database.get_collection(f"facts_{self.project_name}")
+        local_results = local_facts.query(
+            query_texts=thought,
+            n_results=n
+        )
+        fact_fitness.update({
+            ("local", each_id): {
+                "content": each_fact,
+                "distance": each_distance,
+                "metadata": each_metadata
+            }
+            for each_id, each_fact, each_distance, each_metadata in zip(
+                local_results["ids"], local_results["documents"], local_results["distances"], local_results["metadatas"]
+            )
+        })
 
-        new_fitness.sort(key=lambda x: x["prioritized_fitness"], reverse=True)
-        relevant_facts = "\n\n".join(each_document["content"] for each_document in new_fitness[:n])
+        best_facts = sorted(fact_fitness.keys(), key=lambda x: fact_fitness[x]["distance"], reverse=True)
+        best_n_facts = best_facts[:n]
+
+        local_upsert_ids = [each_id for each_id, each_location in best_n_facts if each_location == "local"]
+        local_upsert_metadatas = [fact_fitness[each_id]["metadata"] | {"last_retrieved": now} for each_id in local_upsert_ids]
+        local_facts.upsert(local_upsert_ids, metadatas=local_upsert_metadatas)
+        global_upsert_ids = [each_id for each_id, each_location in best_n_facts if each_location == "global"]
+        global_upsert_metadatas = [fact_fitness[each_id]["metadata"] | {"last_retrieved": now} for each_id in global_upsert_ids]
+        global_facts.upsert(global_upsert_ids, metadatas=global_upsert_metadatas)
+
+        relevant_facts = "\n\n".join(best_n_facts)
         prompt = (
             f"<!-- BEGIN FACTS -->\n"
             f"{relevant_facts}\n"
             f"<!-- END FACTS -->\n"
             f"\n"
-            f"Summarize the facts. Take care to preserve literal information."
+            f"Summarize the facts above. Preserve literal information."
         )
 
         response = LLMMethods.respond(prompt, list(), function_id="summarize", model="gpt-3.5-turbo")
@@ -346,6 +374,7 @@ class PerpetualAgent:
     def process(self) -> str:
         # "gpt-3.5-turbo-16k-0613", "gpt-4-32k-0613", "gpt-4-0613", "gpt-3.5-turbo-0613"
 
+        step = 0
         while not self.progress["is_done"]:
             data_prompt = {"request": self.request, "last_step": self.last_fact}
             prompt = (
@@ -366,7 +395,7 @@ class PerpetualAgent:
                 f"{colorama.Fore.BLUE}{thought}{colorama.Style.RESET_ALL}"
             )
 
-            if len(self.facts_db.documents) < 1:
+            if step < 1:
                 summary = (
                     f"{self.request}\n\n"
                     f"{thought}"
@@ -389,5 +418,7 @@ class PerpetualAgent:
 
             self.last_action = tool_call.tool_name
             self._save_state(thought, tool_call, self.history[:-2])
+
+            step += 1
 
         return self.progress["report"]

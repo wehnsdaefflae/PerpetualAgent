@@ -6,7 +6,9 @@ from typing import Union
 import ast
 import importlib.util
 
-import hyperdb
+import chromadb
+from chromadb.api import Where
+from chromadb.api.models.Collection import Collection
 
 from utils.basic_llm_calls import get_embeddings
 from utils.misc import LOGGER
@@ -17,39 +19,42 @@ class SchemaExtractionException(Exception):
 
 
 class ToolBox:
-    def __init__(self, tool_folder: str, database_path: str = "tool_database.pickle.gz", tool_memory: int = 100):
-        self.tool_folder = tool_folder
-        self.tool_memory = tool_memory
-        self.database_path = database_path
-        self.vector_db = self._initialize_database(database_path)
+    def __init__(self, tool_folder: str, tool_collection_global: Collection, tool_collection_local: Collection, tool_limit: int = -1):
+        # todo: add "success" & "failure" to tool metadata
+        # add project subfolder to tools
 
-    def _initialize_database(self, database_path: str) -> hyperdb.HyperDB():
-        db = hyperdb.HyperDB()
+        self.tool_folder = tool_folder
+        self.tool_limit = tool_limit
+        self.tool_collection_global = tool_collection_global
+        self.tool_collection_local = tool_collection_local
+        self._initialize_local_tool_database()
+
+    def _initialize_local_tool_database(self) -> None:
         tool_names = sorted(self.get_all_tools())
 
-        if os.path.isfile(database_path):
-            db.load(database_path)
+        results = self.tool_collection_local.get()
+        LOGGER.info(f"Database contains {len(results)} tools.")
 
-            tool_names_from_db = sorted(db.documents)
+        tool_ids = list()
+        documents = list()
+        metadatas = list()
+        last_id = self.tool_collection_local.count()
+        for each_name in tool_names:
+            if each_name in results["documents"]:
+                continue
+            each_docstring = self.get_docstring_dict(each_name)
+            each_description = self.description_from_docstring_dict(each_docstring)
+            documents.append(each_description)
+            metadatas.append({"success": 0, "failure": 0, "last_call": -1})
+            tool_ids.append(f"{last_id}")
+            last_id += 1
 
-            if tool_names_from_db == tool_names:
-                LOGGER.info(f"Loading Database already initialized with {len(tool_names)} tools")
-                return db
-
-            db = hyperdb.HyperDB()
-            LOGGER.warning(f"Database already initialized with {len(tool_names_from_db)} tools, but {len(tool_names)} tools found in folder. "
-                                f"Reinitializing database.")
-
-        LOGGER.info(f"Initializing database with {len(tool_names)} tools")
-        docstrings = [self.get_docstring_dict(each_name) for each_name in tool_names]
-        descriptions = list()
-        for each_docstring in docstrings:
-            description = self.description_from_docstring_dict(each_docstring)
-            descriptions.append(description)
-        embeddings = get_embeddings(descriptions)
-        db.add_documents(tool_names, vectors=embeddings)
-        db.save(database_path)
-        return db
+        LOGGER.info(f"Adding {len(tool_ids)} tools to database.")
+        self.tool_collection_local.add(
+            tool_ids,
+            documents=documents,
+            metadatas=metadatas
+        )
 
     def get_docstring_file_from_name(self, tool_name: str) -> str:
         return os.path.join(self.tool_folder, tool_name + ".json")
