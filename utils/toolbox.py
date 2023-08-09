@@ -6,11 +6,8 @@ from typing import Union
 import ast
 import importlib.util
 
-import chromadb
-from chromadb.api import Where
 from chromadb.api.models.Collection import Collection
 
-from utils.basic_llm_calls import get_embeddings
 from utils.misc import LOGGER
 
 
@@ -38,7 +35,6 @@ class ToolBox:
         tool_ids = list()
         documents = list()
         metadatas = list()
-        last_id = self.tool_collection_local.count()
         for each_name in tool_names:
             if each_name in results["documents"]:
                 continue
@@ -46,8 +42,7 @@ class ToolBox:
             each_description = self.description_from_docstring_dict(each_docstring)
             documents.append(each_description)
             metadatas.append({"success": 0, "failure": 0, "last_call": -1})
-            tool_ids.append(f"{last_id}")
-            last_id += 1
+            tool_ids.append(each_name)
 
         LOGGER.info(f"Adding {len(tool_ids)} tools to database.")
         self.tool_collection_local.add(
@@ -98,10 +93,12 @@ class ToolBox:
         self._save_tool_code(code, docstring_dict, is_temp=is_temp)
         if not is_temp:
             description = self.description_from_docstring_dict(docstring_dict)
-            embedding, = get_embeddings([description])
             tool_name = docstring_dict["name"]
-            self.vector_db.add_document(tool_name, vector=embedding)
-            self.vector_db.save(self.database_path)
+            self.tool_collection_local.add(
+                [tool_name],
+                documents=[description],
+                metadatas=[{"success": 0, "failure": 0, "last_call": -1}],
+            )
 
     def description_from_docstring_dict(self, docstring_dict: dict[str, any]) -> str:
         return docstring_dict["summary"] + "\n" + docstring_dict["description"]
@@ -254,27 +251,31 @@ class ToolBox:
         specification.loader.exec_module(module)
         return getattr(module, name)
 
-    def update_tool_stats(self, tool_call: str, tool_was_effective: bool) -> None:
-        stats_file = self.tool_folder + "_stats.json"
-        split_call = tool_call.split("(", maxsplit=1)[0]
-        if split_call not in self.get_all_tools():
-            LOGGER.warning(f"Could not find tool called \'{split_call}\'.")
+    def update_tool_stats(self, tool_call: str, tool_was_effective: bool, was_local: bool = True) -> None:
+        # todo: pass tool source as argument
+        tool_name = tool_call.split("(", maxsplit=1)[0]
+        if tool_name not in self.get_all_tools():
+            LOGGER.warning(f"Could not find tool called \'{tool_name}\'.")
             return
 
-        if os.path.isfile(stats_file):
-            with open(stats_file, mode="r") as file:
-                stats = json.load(file)
+        selected_collection = self.tool_collection_local if was_local else self.tool_collection_global
+        results = selected_collection.get(
+            where={"id": tool_name},
+        )
+        if len(results["ids"]) < 1:
+            selected_collection = self.tool_collection_global
+            results = selected_collection.get(tool_name)
+            if len(results["ids"]) < 1:
+                LOGGER.warning(f"Could not find vector entry for \'{tool_name}\'.")
+                return
+
+        tool_id = results["ids"][0]
+        metadatas = results["metadatas"]
+        tool_metadata = dict(metadatas[0])
+        if tool_was_effective:
+            tool_metadata["success"] = tool_metadata.get("success", 0) + 1
         else:
-            stats = dict()
+            tool_metadata["failure"] = tool_metadata.get("failure", 0) + 1
 
-        key = "is_effective" if tool_was_effective else "not_effective"
-        subdict = stats.get(split_call)
-        if subdict is None:
-            subdict = {key: 1}
-            stats[split_call] = subdict
-
-        else:
-            subdict[key] = subdict.get(key, 0) + 1
-
-        with open(stats_file, mode="w") as file:
-            json.dump(stats, file)
+        document = results["documents"][0]
+        selected_collection.update(tool_id, metadatas=[tool_metadata], documents=[document])

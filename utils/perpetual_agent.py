@@ -275,6 +275,7 @@ class PerpetualAgent:
             query_texts=thought,
             n_results=n
         )
+        # todo: results might be in lists of lists. take only the first list then
         fact_fitness = {
             ("global", each_id): {
                 "content": each_fact,
