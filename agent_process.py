@@ -1,40 +1,62 @@
+class FactsStorage:
+    def __init__(self):
+        self._facts = []
+
+    def retrieve_fact(self, thought: str) -> str:
+        """Simulated retrieval based on thought. You can implement a more detailed retrieval method."""
+        for fact in self._facts:
+            if thought in fact:
+                return fact
+        return ""
+
+    def add_fact(self, fact: str):
+        self._facts.append(fact)
+
+
+class ActionsStorage:
+    def __init__(self):
+        self._actions = []
+
+    def retrieve_action(self, thought: str) -> str:
+        """Simulated retrieval based on thought. You can implement a more detailed retrieval method."""
+        for action in self._actions:
+            if thought in action:
+                return action
+        return ""
+
+    def add_action(self, action: str):
+        self._actions.append(action)
+
+
 def system_inference(user_input: str, summary: str) -> str:
-    """Infers a thought based on user input and summary."""
     pass
 
 
-def retrieve_action_from_repo(thought: str) -> str:
-    """Retrieves an action based on the inferred thought."""
-    pass
+def retrieve_action_from_repo(thought: str, actions_storage: ActionsStorage) -> str:
+    return actions_storage.retrieve_action(thought)
 
 
-def retrieve_facts_from_memory(thought: str) -> str:
-    """Retrieves relevant facts from memory based on the thought."""
-    pass
+def retrieve_facts_from_memory(thought: str, facts_storage: FactsStorage) -> str:
+    return facts_storage.retrieve_fact(thought)
 
 
 def extract_parameters(thought: str, retrieved_facts: str, selected_action: str) -> str:
-    """Extracts action parameters based on the thought, relevant facts, and selected action."""
     pass
 
 
 def execute_action(selected_action: str, action_params: str) -> str:
-    """Executes the selected action with the extracted parameters."""
     pass
 
 
 def generate_fact(result: str, thought: str) -> str:
-    """Generates a new fact based on the result and initial thought."""
     pass
 
 
 def update_initiate_summary(new_fact: str, previous_summary: str) -> str:
-    """Updates or initiates a summary based on the new fact and previous summary."""
     pass
 
 
 def check_request_fulfilled(summary: str) -> str:
-    """Checks if the request has been fulfilled based on the summary."""
     pass
 
 
@@ -43,32 +65,21 @@ def main():
     user_input = "Your request here"
     summary = ""
 
+    # Instantiate storage
+    facts_storage = FactsStorage()
+    actions_storage = ActionsStorage()
+
     while True:
-        # Infer thought considering the user input and the summary
         thought = system_inference(user_input, summary)
-
-        # Retrieve action from the action repository based on the thought
-        selected_action = retrieve_action_from_repo(thought)
-
-        # Retrieve relevant facts from memory based on the thought
-        retrieved_facts = retrieve_facts_from_memory(thought)
-
-        # Extract action parameters based on the thought, relevant facts, and selected action
+        selected_action = retrieve_action_from_repo(thought, actions_storage)
+        retrieved_facts = retrieve_facts_from_memory(thought, facts_storage)
         action_params = extract_parameters(thought, retrieved_facts, selected_action)
-
-        # Execute the selected action with the extracted parameters
         result = execute_action(selected_action, action_params)
-
-        # Generate a new fact based on the result and the thought
         new_fact = generate_fact(result, thought)
-
-        # Update or initiate the summary based on the new fact and the last state of the summary
+        facts_storage.add_fact(new_fact)
         summary = update_initiate_summary(new_fact, summary)
-
-        # Check if the request has been fulfilled based on the summary
         request_status = check_request_fulfilled(summary)
 
-        # If request is fulfilled, break out of the loop
         if request_status == "Fulfilled":
             break
 
