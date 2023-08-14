@@ -4,7 +4,6 @@ from typing import Literal, Callable, TypedDict
 
 import nicegui
 from nicegui.elements.dialog import Dialog
-from nicegui.elements.table import Table
 from nicegui.page_layout import LeftDrawer, RightDrawer, Element, Header, Footer
 
 
@@ -21,6 +20,15 @@ class StepView:
 
 
 @dataclass
+class AgentDetails:
+    id: str
+    task: str
+    summary: str
+    status: Literal["finished", "pending", "working", "paused"]
+    steps: list[StepView]
+
+
+@dataclass
 class FactsView:
     facts: list[str]
 
@@ -31,7 +39,11 @@ class ActionsView:
 
 
 class View:
-    def __init__(self, add_agent_to_model: Callable[[dict[str, any]], AgentRow], get_agents_as_rows_from_model: Callable[[], list[AgentRow]]) -> None:
+    def __init__(self,
+                 add_agent_to_model: Callable[[dict[str, any]], AgentRow],
+                 get_agents_as_rows_from_model: Callable[[], list[AgentRow]],
+                 get_agent_details_from_model: Callable[[str], AgentDetails]
+                 ) -> None:
         self.facts_local = list[FactsView]()
         self.facts_global = list[FactsView]()
 
@@ -40,28 +52,33 @@ class View:
 
         self.steps = list[StepView]()
 
-        self.table = None
+        self.left_drawer = None
+        self.right_drawer = None
+        self.main_section = None
+
+        self.agents_table = None
 
         self.add_agent_to_model = add_agent_to_model
         self.get_agents_as_rows_from_model = get_agents_as_rows_from_model
+        self.get_agent_details_from_model = get_agent_details_from_model
 
         self.run()
 
     def add_agent_rows(self, agent_rows: list[AgentRow]) -> None:
-        new_rows = [each_row for each_row in agent_rows if each_row not in self.table.rows]
+        new_rows = [each_row for each_row in agent_rows if each_row not in self.agents_table.rows]
         if len(new_rows) < 1:
             return
 
-        self.table.add_rows(*new_rows)
+        self.agents_table.add_rows(*new_rows)
 
     def run(self) -> None:
         self.setup_page()
 
-        _ = self.get_main_agent_details()
-        all_agents_drawer = self._get_all_agents_drawer()
-        memory_drawer = self._get_memory_drawer()
+        self.main_section = self.get_empty_main()
+        self.left_drawer = self._get_all_agents_drawer()
+        self.right_drawer = self._get_memory_drawer()
 
-        _ = self._add_header(all_agents_drawer, memory_drawer)
+        _ = self._add_header(self.left_drawer, self.right_drawer)
         _ = self._add_footer()
 
         nicegui.ui.run()
@@ -96,11 +113,39 @@ class View:
         return right_drawer
 
     def change_details_view(self) -> None:
-        selected, = self.table.selected
-        # retrieve agent state from model
-        #   - local memory (facts, actions)
-        #   - steps (thought, result)
-        #   - summary
+        self.main_section.clear()
+        if len(self.agents_table.selected) < 1:
+            self.empty_main()
+            return
+
+        selected, = self.agents_table.selected
+        agent_id = selected["id"]
+        agent_details = self.get_agent_details_from_model(agent_id)
+
+        with self.main_section:
+            # retrieve agent state from model
+            #   - local memory (facts, actions)
+            #   - steps (thought, result)
+            #   - summary
+            nicegui.ui.label(agent_details.task).classes("text-2xl flex-none")
+            nicegui.ui.label(
+                f"{agent_details.summary} [This is the progress report.]"
+            ).classes("flex-none")
+
+            # grow dynamically
+            with nicegui.ui.scroll_area().style('background-color: #f0f4fa').classes("flex-1"):
+                for each_step in agent_details.steps:
+                    with nicegui.ui.row().classes("justify-between flex items-center"):
+                        nicegui.ui.label(each_step.thought).classes("flex-1 m-3 p-3 bg-blue-300 rounded-lg")
+                        nicegui.ui.button("details").classes("mx-5")
+                    with nicegui.ui.row().classes("justify-between flex items-center"):
+                        nicegui.ui.label(each_step.result).classes("flex-1 m-3 p-3 bg-green-300 rounded-lg")
+                        nicegui.ui.button("details").classes("mx-5")
+                    nicegui.ui.separator().classes("my-2")
+
+            with nicegui.ui.row().classes('justify-around flex-none w-full'):
+                nicegui.ui.button("Pause")
+                nicegui.ui.button("Cancel")
 
 
     def _get_all_agents_drawer(self) -> LeftDrawer:
@@ -112,9 +157,8 @@ class View:
             ]
             with nicegui.ui.scroll_area().classes("flex-1"):
                 rows = self.get_agents_as_rows_from_model()
-                self.table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="single", on_select=self.change_details_view)
-                if 0 < len(rows):
-                    self.table.selected.append(rows[0])
+                self.agents_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="single", on_select=self.change_details_view)
+                self.empty_main()
 
             nicegui.ui.separator().classes("my-5")
             nicegui.ui.button("New task", on_click=self.get_dialog)
@@ -132,45 +176,45 @@ class View:
 
         with nicegui.ui.dialog() as dialog, nicegui.ui.card():
             nicegui.ui.label("Set up agent").classes("text-xl")
-            text_area = nicegui.ui.textarea(placeholder="Request", label="Enter your request", on_change=enable_ok_button).classes("w-full")
+            text_area = nicegui.ui.textarea(placeholder="Task", label="Enter the agent's task", on_change=enable_ok_button).classes("w-full")
 
             with nicegui.ui.row():
                 with nicegui.ui.column():
                     read_facts_global = nicegui.ui.checkbox("Read global facts", value=True)
                     read_actions_global = nicegui.ui.checkbox("Read global actions", value=True)
-                    nicegui.ui.separator()
-                    confirm_actions = nicegui.ui.checkbox("Confirm actions", value=True).classes("w-full")
 
                 with nicegui.ui.column():
-                    write_facts_global = nicegui.ui.checkbox("Write global facts")
-                    write_actions_global = nicegui.ui.checkbox("Write global actions")
-                    write_facts_local = nicegui.ui.checkbox("Write local facts")
-                    write_actions_local = nicegui.ui.checkbox("Write local actions")
+                    write_facts_local = nicegui.ui.checkbox("Write local facts", value=True)
+                    write_actions_local = nicegui.ui.checkbox("Write local actions", value=True)
 
             with nicegui.ui.row():
                 with nicegui.ui.column():
-                    llm_thought = nicegui.ui.select(llms, label="Thought inference", value=llms[0]).classes("w-full")
-                    llm_action = nicegui.ui.select(llms, label="Action generation", value=llms[0]).classes("w-full")
-                    llm_parameter = nicegui.ui.select(llms, label="Parameter extraction", value=llms[0]).classes("w-full")
+                    llm_thought = nicegui.ui.select(llms, label="Thought inference", value=llms[0])
+                    llm_action = nicegui.ui.select(llms, label="Action generation", value=llms[0])
+                    llm_parameter = nicegui.ui.select(llms, label="Parameter extraction", value=llms[0])
 
                 with nicegui.ui.column():
-                    llm_result = nicegui.ui.select(llms, label="Result naturalization", value=llms[0]).classes("w-full")
-                    llm_fact = nicegui.ui.select(llms, label="Fact composition", value=llms[0]).classes("w-full")
-                    llm_summary = nicegui.ui.select(llms, label="Progress summarization", value=llms[0]).classes("w-full")
+                    llm_result = nicegui.ui.select(llms, label="Result naturalization", value=llms[0])
+                    llm_fact = nicegui.ui.select(llms, label="Fact composition", value=llms[0])
+                    llm_summary = nicegui.ui.select(llms, label="Progress summarization", value=llms[0])
 
-                with nicegui.ui.row().classes('justify-around w-full'):
-                    button_ok = nicegui.ui.button("OK", color="primary", on_click=lambda: dialog.submit("done"))
-                    button_ok.disable()
-                    nicegui.ui.button("Cancel", color="secondary", on_click=dialog.close)
+            nicegui.ui.separator()
+
+            confirm_actions = nicegui.ui.checkbox("Confirm actions / start", value=True)
+
+            with nicegui.ui.row().classes('justify-around w-full'):
+                button_ok = nicegui.ui.button("OK", color="primary", on_click=lambda: dialog.submit("done"))
+                button_ok.disable()
+                nicegui.ui.button("Cancel", color="secondary", on_click=dialog.close)
 
         result = await dialog
         if result is not None:
             setup = {
-                "request": text_area.value,
-                "facts_global": (read_facts_global.value, write_facts_global.value),
-                "actions_global": (read_actions_global.value, write_actions_global.value),
-                "facts_local": write_facts_local.value,
-                "actions_local": write_actions_local.value,
+                "task": text_area.value,
+                "read_facts_global": read_facts_global.value,
+                "read_actions_global": read_actions_global.value,
+                "write_facts_local": write_facts_local.value,
+                "write_actions_local": write_actions_local.value,
 
                 "confirm_actions": confirm_actions.value,
 
@@ -187,33 +231,15 @@ class View:
 
         return dialog
 
-    def get_main_agent_details(self) -> Element:
-        with nicegui.ui.row().classes("flex flex-col h-full") as main_section:
-            nicegui.ui.label("Develop a new anti cancer drug.").classes("text-2xl flex-none")
-            nicegui.ui.label(
-                "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, "
-                "sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor "
-                "sit amet. Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, "
-                "sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor "
-                "sit amet. [This is the progress report.]"
-            ).classes("flex-none")
-
-            # grow dynamically
-            with nicegui.ui.scroll_area().style('background-color: #f0f4fa').classes("flex-1"):
-                for i in range(1, 51):
-                    with nicegui.ui.row().classes("justify-between flex items-center"):
-                        nicegui.ui.label(f"natural thought {i}").classes("flex-1 m-3 p-3 bg-blue-300 rounded-lg")
-                        nicegui.ui.button("details").classes("mx-5")
-                    with nicegui.ui.row().classes("justify-between flex items-center"):
-                        nicegui.ui.label(f"natural result {i}").classes("flex-1 m-3 p-3 bg-green-300 rounded-lg")
-                        nicegui.ui.button("details").classes("mx-5")
-                    nicegui.ui.separator().classes("my-2")
-
-            with nicegui.ui.row().classes('justify-around flex-none w-full'):
-                nicegui.ui.button("Pause")
-                nicegui.ui.button("Cancel")
-
+    def get_empty_main(self) -> Element:
+        with nicegui.ui.row().classes("flex flex-col h-full w-full") as main_section:
+            nicegui.ui.label("no agent selected").classes("text-2xl flex-none")
         return main_section
+
+    def empty_main(self) -> None:
+        self.main_section.clear()
+        with self.main_section:
+            nicegui.ui.label("no agent selected").classes("text-2xl flex-none")
 
     def setup_page(self) -> None:
         nicegui.ui.query('#c0').classes("h-screen")

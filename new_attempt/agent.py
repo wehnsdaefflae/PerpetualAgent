@@ -8,12 +8,12 @@ from new_attempt.storages.fact_storage import FactStorage
 
 @dataclass
 class AgentArguments:
-    request: str
+    task: str
 
-    facts_global: tuple[bool, bool]
-    actions_global: tuple[bool, bool]
-    facts_local: bool
-    actions_local: bool
+    read_facts_global: bool
+    read_actions_global: bool
+    write_facts_local: bool
+    write_actions_local: bool
 
     confirm_actions: bool
 
@@ -25,19 +25,30 @@ class AgentArguments:
     llm_summary: str
 
 
+@dataclass
+class Step:
+    thought: str
+    action_id: str
+    arguments: dict[str, any]
+    result: str
+    fact_id: str
+
+
 class Agent(threading.Thread):
     facts_storage = FactStorage()
     actions_storage = ActionStorage()
 
-    def __init__(self, agent_id: str, arguments: AgentArguments) -> None:
+    def __init__(self, agent_id: str, arguments: AgentArguments, _past_steps: list[Step] | None = None) -> None:
         super().__init__()
         self.agent_id = agent_id
         self.arguments = arguments
+
         self.status = "working"
-
-        # Instantiate shared storages
-
         self.summary = ""
+        if _past_steps is None:
+            self.past_steps = list[Step]()
+        else:
+            self.past_steps = list[Step](_past_steps)
 
     def _infer(self, user_input: str, summary: str) -> str:
         thought = ""
@@ -45,7 +56,10 @@ class Agent(threading.Thread):
         pass
 
     def _retrieve_action_from_repo(self, thought: str) -> str:
-        return Agent.actions_storage.retrieve_action(thought)
+        action = Agent.actions_storage.retrieve_action(thought)
+        if action is None:
+            action = ""
+        return action
 
     def _retrieve_facts_from_memory(self, thought: str) -> list[str]:
         return Agent.facts_storage.retrieve_facts(thought)
@@ -83,7 +97,7 @@ class Agent(threading.Thread):
         iteration = 0
 
         while True:
-            thought = self._infer(self.arguments.request, self.summary)
+            thought = self._infer(self.arguments.task, self.summary)
             selected_action = self._retrieve_action_from_repo(thought)
             retrieved_facts = self._retrieve_facts_from_memory(thought)
             action_params = self._extract_parameters(thought, retrieved_facts, selected_action)
@@ -96,7 +110,7 @@ class Agent(threading.Thread):
             else:
                 self._decrease_action_value(selected_action)
 
-            self.summary, is_fulfilled = self._update_initiate_summary(self.arguments.request, self.summary, new_fact)
+            self.summary, is_fulfilled = self._update_initiate_summary(self.arguments.task, self.summary, new_fact)
             self._save_summary(self.summary, is_fulfilled)
 
             iteration += 1
