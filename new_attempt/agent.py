@@ -38,17 +38,22 @@ class Agent(threading.Thread):
     facts_storage = FactStorage()
     actions_storage = ActionStorage()
 
-    def __init__(self, agent_id: str, arguments: AgentArguments, _past_steps: list[Step] | None = None) -> None:
+    def __init__(self, agent_id: str, arguments: AgentArguments, max_steps: int = 20, _summary: str | None = None, _past_steps: list[Step] | None = None) -> None:
         super().__init__()
         self.agent_id = agent_id
         self.arguments = arguments
 
         self.status = "working"
-        self.summary = ""
+        if _summary is None:
+            self.summary = ""
+        else:
+            self.summary = _summary
+
+        self.max_steps = max_steps
         if _past_steps is None:
             self.past_steps = list[Step]()
         else:
-            self.past_steps = list[Step](_past_steps)
+            self.past_steps = list[Step](_past_steps[-max_steps:])
 
     def _infer(self, user_input: str, summary: str) -> str:
         thought = ""

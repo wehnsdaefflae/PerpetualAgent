@@ -16,11 +16,14 @@ class AgentRow(TypedDict):
 @dataclass
 class StepView:
     thought: str
+    action_id: str
+    arguments: dict[str, any]
     result: str
+    fact_id: str
 
 
 @dataclass
-class AgentDetails:
+class AgentView:
     id: str
     task: str
     summary: str
@@ -42,7 +45,8 @@ class View:
     def __init__(self,
                  add_agent_to_model: Callable[[dict[str, any]], AgentRow],
                  get_agents_as_rows_from_model: Callable[[], list[AgentRow]],
-                 get_agent_details_from_model: Callable[[str], AgentDetails]
+                 get_agent_details_from_model: Callable[[str], AgentView],
+                 get_fact_from_model: Callable[[str], str]
                  ) -> None:
         self.facts_local = list[FactsView]()
         self.facts_global = list[FactsView]()
@@ -61,6 +65,7 @@ class View:
         self.add_agent_to_model = add_agent_to_model
         self.get_agents_as_rows_from_model = get_agents_as_rows_from_model
         self.get_agent_details_from_model = get_agent_details_from_model
+        self.get_fact_from_model = get_fact_from_model
 
         self.run()
 
@@ -123,10 +128,6 @@ class View:
         agent_details = self.get_agent_details_from_model(agent_id)
 
         with self.main_section:
-            # retrieve agent state from model
-            #   - local memory (facts, actions)
-            #   - steps (thought, result)
-            #   - summary
             nicegui.ui.label(agent_details.task).classes("text-2xl flex-none")
             nicegui.ui.label(
                 f"{agent_details.summary} [This is the progress report.]"
@@ -136,17 +137,25 @@ class View:
             with nicegui.ui.scroll_area().style('background-color: #f0f4fa').classes("flex-1"):
                 for each_step in agent_details.steps:
                     with nicegui.ui.row().classes("justify-between flex items-center"):
-                        nicegui.ui.label(each_step.thought).classes("flex-1 m-3 p-3 bg-blue-300 rounded-lg")
-                        nicegui.ui.button("details").classes("mx-5")
+                        nicegui.ui.label(each_step.thought).classes("flex-1 m-3 p-3 bg-blue-300 rounded-lg").on("click", self.thought_details)
+                        nicegui.ui.button("details", on_click=self.thought_details).classes("mx-5")
+
                     with nicegui.ui.row().classes("justify-between flex items-center"):
-                        nicegui.ui.label(each_step.result).classes("flex-1 m-3 p-3 bg-green-300 rounded-lg")
-                        nicegui.ui.button("details").classes("mx-5")
+                        each_fact = self.get_fact_from_model(each_step.fact_id)
+                        nicegui.ui.label(f"{each_fact} ({each_step.fact_id})").classes("flex-1 m-3 p-3 bg-green-300 rounded-lg").on("click", self.fact_details)
+                        nicegui.ui.button("details", on_click=self.fact_details).classes("mx-5")
+
                     nicegui.ui.separator().classes("my-2")
 
             with nicegui.ui.row().classes('justify-around flex-none w-full'):
                 nicegui.ui.button("Pause")
                 nicegui.ui.button("Cancel")
 
+    def thought_details(self) -> None:
+        print("show action (action_id) and action arguments")
+
+    def fact_details(self) -> None:
+        print("show action result")
 
     def _get_all_agents_drawer(self) -> LeftDrawer:
         with nicegui.ui.left_drawer(top_corner=False, bottom_corner=False).style('background-color: #d7e3f4').classes("flex flex-col h-full") as left_drawer:

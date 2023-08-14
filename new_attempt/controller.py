@@ -1,6 +1,8 @@
+from dataclasses import asdict
+
 from new_attempt.agent import Agent, AgentArguments
 from new_attempt.model import Model
-from new_attempt.view import View, AgentRow, AgentDetails
+from new_attempt.view import View, AgentRow, AgentView, StepView
 
 
 class Controller:
@@ -12,17 +14,23 @@ class Controller:
         self.view = View(
             self.add_agent_to_model,
             self.get_agents_as_rows_from_model,
-            self.get_agent_details_from_model
+            self.get_agent_details_from_model,
+            self.get_fact_from_model,
         )
 
-    def get_agent_details_from_model(self, agent_id: str) -> AgentDetails:
-        agent = self.model.agent_storage.retrieve_agent(agent_id)
-        return AgentDetails(
+    def get_fact_from_model(self, fact_id: str) -> str:
+        return self.model.fact_storage.get_fact(fact_id)
+
+    def get_agent_details_from_model(self, agent_id: str) -> AgentView:
+        agent = self.model.agent_storage.get_agent(agent_id)
+        steps_view = [StepView(**asdict(each_step)) for each_step in agent.past_steps]
+
+        return AgentView(
             agent.agent_id,
             agent.arguments.task,
             agent.summary,
             agent.status,
-            agent.past_steps
+            steps_view
         )
 
     def get_agents_as_rows_from_model(self) -> list[AgentRow]:

@@ -11,7 +11,7 @@ class AgentStorage:
     def retrieve_agents(self) -> list[Agent]:
         return sorted(self._agents.values(), key=lambda agent: agent.agent_id)
 
-    def retrieve_agent(self, agent_id: str) -> Agent:
+    def get_agent(self, agent_id: str) -> Agent:
         return self._agents[agent_id]
 
     def add_agent(self, agent_arguments: AgentArguments) -> Agent:

@@ -32,7 +32,7 @@ CAR_STEPS = [
     )
 ]
 
-CAR_AGENT = Agent("0", CAR_ARGUMENTS, _past_steps=CAR_STEPS)
+CAR_AGENT = Agent("0", CAR_ARGUMENTS, _summary="No car so far...", _past_steps=CAR_STEPS)
 
 BOOK_STEPS = [
     Step(
@@ -64,7 +64,7 @@ BOOK_ARGUMENTS = AgentArguments(
     llm_fact="chatgpt-3.5-turbo",
     llm_summary="chatgpt-3.5-turbo",
 )
-BOOK_AGENT = Agent("1", BOOK_ARGUMENTS, _past_steps=BOOK_STEPS)
+BOOK_AGENT = Agent("1", BOOK_ARGUMENTS, _summary="At least you wanna read sth.", _past_steps=BOOK_STEPS)
 
 AGENTS = {
     CAR_AGENT.agent_id: CAR_AGENT,
