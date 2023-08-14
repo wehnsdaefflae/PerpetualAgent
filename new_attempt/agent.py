@@ -32,8 +32,8 @@ class Agent(threading.Thread):
     def __init__(self, agent_id: str, arguments: AgentArguments) -> None:
         super().__init__()
         self.agent_id = agent_id
-
         self.arguments = arguments
+        self.status = "working"
 
         # Instantiate shared storages
 

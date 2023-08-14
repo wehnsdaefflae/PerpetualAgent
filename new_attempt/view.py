@@ -1,20 +1,17 @@
 # coding=utf-8
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Callable, TypedDict
 
 import nicegui
 from nicegui.elements.dialog import Dialog
 from nicegui.elements.table import Table
 from nicegui.page_layout import LeftDrawer, RightDrawer, Element, Header, Footer
 
-# from new_attempt.agent import Agent
 
-
-@dataclass
-class AgentView:
-    id: int
+class AgentRow(TypedDict):
+    id: str
     task: str
-    status: Literal["finished", "pending", "working", "paused"] = "working"
+    status: Literal["finished", "pending", "working", "paused"]
 
 
 @dataclass
@@ -33,26 +30,8 @@ class ActionsView:
     actions: list[str]
 
 
-"""
-def add_agent(properties: dict[str, any]) -> None:
-    agent_id = len(AGENT_LIST)
-    user_input = f"Task for agent {agent_id}"
-
-    project_id = str(agent_id)
-    agent_instance = Agent(project_id, user_input)
-
-    agent_view = AgentView(agent_id, user_input)
-    AGENT_LIST.append(agent_view)
-
-    agent_instance.start()
-    agent_instance.join()
-"""
-
-
 class View:
-    def __init__(self):
-        self.agent_rows = list()
-
+    def __init__(self, add_agent_to_model: Callable[[dict[str, any]], AgentRow], get_agents_as_rows_from_model: Callable[[], list[AgentRow]]) -> None:
         self.facts_local = list[FactsView]()
         self.facts_global = list[FactsView]()
 
@@ -61,34 +40,46 @@ class View:
 
         self.steps = list[StepView]()
 
+        self.table = None
+
+        self.add_agent_to_model = add_agent_to_model
+        self.get_agents_as_rows_from_model = get_agents_as_rows_from_model
+
         self.run()
+
+    def add_agent_rows(self, agent_rows: list[AgentRow]) -> None:
+        new_rows = [each_row for each_row in agent_rows if each_row not in self.table.rows]
+        if len(new_rows) < 1:
+            return
+
+        self.table.add_rows(*new_rows)
 
     def run(self) -> None:
         self.setup_page()
 
         _ = self.get_main_agent_details()
-        all_agents_drawer = self.get_all_agents_drawer()
-        memory_drawer = self.get_memory_drawer()
+        all_agents_drawer = self._get_all_agents_drawer()
+        memory_drawer = self._get_memory_drawer()
 
-        _ = self.add_header(all_agents_drawer, memory_drawer)
-        _ = self.add_footer()
+        _ = self._add_header(all_agents_drawer, memory_drawer)
+        _ = self._add_footer()
 
         nicegui.ui.run()
 
-    def add_footer(self) -> Footer:
+    def _add_footer(self) -> Footer:
         with nicegui.ui.footer() as footer:
             nicegui.ui.label("Status updates from agents, incl. agent number")
 
         return footer
 
-    def add_header(self, left_drawer: LeftDrawer, right_drawer: RightDrawer) -> Header:
+    def _add_header(self, left_drawer: LeftDrawer, right_drawer: RightDrawer) -> Header:
         with nicegui.ui.header(elevated=True).classes('items-center justify-between') as header:
             nicegui.ui.button(text="agents", on_click=lambda: left_drawer.toggle(), icon='arrow_left').props('flat color=white')
             nicegui.ui.label("Details").style('font-size: 20px')
             nicegui.ui.button(text="memory", on_click=lambda: right_drawer.toggle(), icon='arrow_right').props('flat color=white')
         return header
 
-    def get_memory_drawer(self) -> RightDrawer:
+    def _get_memory_drawer(self) -> RightDrawer:
         with nicegui.ui.right_drawer(top_corner=False, bottom_corner=False, value=False).style('background-color: #ebf1fa').props(":width=\"500\"").classes(
                 "flex flex-col h-full") as right_drawer:
             with nicegui.ui.tabs() as tabs:
@@ -104,25 +95,33 @@ class View:
 
         return right_drawer
 
-    def get_all_agents_drawer(self) -> LeftDrawer:
+    def change_details_view(self) -> None:
+        selected, = self.table.selected
+        # retrieve agent state from model
+        #   - local memory (facts, actions)
+        #   - steps (thought, result)
+        #   - summary
+
+
+    def _get_all_agents_drawer(self) -> LeftDrawer:
         with nicegui.ui.left_drawer(top_corner=False, bottom_corner=False).style('background-color: #d7e3f4').classes("flex flex-col h-full") as left_drawer:
             columns = [
-                {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "number"},
+                {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"},
                 {"name": "task", "label": "Task", "field": "task", "required": True, "align": "left", "type": "text"},
                 {"name": "status", "label": "Status", "field": "status", "required": True, "align": "left", "type": "text"},
             ]
             with nicegui.ui.scroll_area().classes("flex-1"):
-                table = nicegui.ui.table(columns=columns, rows=self.agent_rows, row_key="agent_no")
+                rows = self.get_agents_as_rows_from_model()
+                self.table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="single", on_select=self.change_details_view)
+                if 0 < len(rows):
+                    self.table.selected.append(rows[0])
 
             nicegui.ui.separator().classes("my-5")
-            # nicegui.ui.button("New task", on_click=add_agent)
-
-            # nicegui.ui.button("New task", on_click=t)
-            nicegui.ui.button("New task", on_click=lambda: self.get_dialog(table))
+            nicegui.ui.button("New task", on_click=self.get_dialog)
 
             return left_drawer
 
-    async def get_dialog(self, table: Table) -> Dialog:
+    async def get_dialog(self) -> Dialog:
         llms = ["chatgpt-3.5-turbo", "gpt-4", "llama", "etc."]
 
         def enable_ok_button() -> None:
@@ -183,11 +182,8 @@ class View:
                 "llm_summary": llm_summary.value,
             }
 
-            # print(result)
-            agent_id = len(self.agent_rows)
-            agent_view = {"id": agent_id, "task": setup["request"], "status": "working"}
-            self.agent_rows.append(agent_view)
-            table.update()
+            agent_view = self.add_agent_to_model(setup)
+            self.add_agent_rows([agent_view])
 
         return dialog
 
@@ -246,18 +242,3 @@ class View:
                 ]
                 # details (remove?, persist?)
                 nicegui.ui.table(columns=columns, rows=rows, row_key="action").style('background-color: #ebf1fa')
-
-
-def main() -> None:
-    # Initial data
-    user_input = "Your request here"
-    project_id = "Your project ID here"
-
-    # agent_instance.start()
-    # agent_instance.join()
-
-    view = View()
-
-
-if __name__ in {"__main__", "__mp_main__"}:
-    main()
