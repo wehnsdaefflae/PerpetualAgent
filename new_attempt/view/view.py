@@ -77,9 +77,11 @@ class View:
 
         self.steps = list[StepView]()
 
+        self.header = None
         self.left_drawer = None
         self.right_drawer = None
         self.main_section = None
+        self.footer = None
 
         self.agents_table = None
 
@@ -102,17 +104,63 @@ class View:
 
         self.agents_table.add_rows(*new_rows)
 
+    def setup_sections(self) -> None:
+        self.header = nicegui.ui.header(elevated=True)
+        self.header.classes('items-center justify-between')
+
+        self.main_section = nicegui.ui.row()
+        self.main_section.classes("flex flex-col h-full w-full")
+
+        self.left_drawer = nicegui.ui.left_drawer(top_corner=False, bottom_corner=False)
+        self.left_drawer.style('background-color: #d7e3f4')
+        self.left_drawer.classes("flex flex-col h-full")
+
+        self.right_drawer = nicegui.ui.right_drawer(top_corner=False, bottom_corner=False, value=False)
+        self.right_drawer.style('background-color: #ebf1fa')
+        self.right_drawer.props(":width=\"500\"")
+        self.right_drawer.classes("flex flex-col h-full")
+
+        self.footer = nicegui.ui.footer()
+
     def run(self) -> None:
-        self.setup_page()
+        self.modify_page()
 
-        self.main_section = self.get_empty_main()
-        self.left_drawer = self._get_all_agents_drawer()
-        self.right_drawer = self._get_memory_drawer()
+        self.setup_sections()
 
-        _ = self._add_header(self.left_drawer, self.right_drawer)
+        self.fill_header()
+        self.fill_left_drawer()
+        self.fill_main()
+        self.fill_right_drawer()
+
         _ = self._add_footer()
 
+        # self.get_empty_main()
         nicegui.ui.run()
+
+    def fill_header(self) -> None:
+        self.header.clear()
+        with self.header:
+            nicegui.ui.button(text="agents", on_click=lambda: self.left_drawer.toggle(), icon='arrow_left')
+            main_heading = nicegui.ui.label("Details")
+            main_heading.style('font-size: 20px')
+            nicegui.ui.button(text="memory", on_click=lambda: self.right_drawer.toggle(), icon='arrow_right')
+
+    def fill_left_drawer(self) -> None:
+        self.left_drawer.clear()
+        with self.left_drawer:
+            columns = [
+                {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"},
+                {"name": "task", "label": "Task", "field": "task", "required": True, "align": "left", "type": "text"},
+                {"name": "status", "label": "Status", "field": "status", "required": True, "align": "left", "type": "text"},
+            ]
+            with nicegui.ui.scroll_area() as scroll_area:
+                scroll_area.classes("flex-1")
+                rows = self.get_agents_as_rows_from_model()
+                self.agents_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="single", on_select=self.agent_changed)
+
+            nicegui.ui.separator().classes("my-5")
+            nicegui.ui.button("New task", on_click=self.get_dialog)
+
 
     def _add_footer(self) -> Footer:
         with nicegui.ui.footer() as footer:
@@ -120,39 +168,25 @@ class View:
 
         return footer
 
-    def _add_header(self, left_drawer: LeftDrawer, right_drawer: RightDrawer) -> Header:
-        with nicegui.ui.header(elevated=True).classes('items-center justify-between') as header:
-            nicegui.ui.button(text="agents", on_click=lambda: left_drawer.toggle(), icon='arrow_left').props('flat color=white')
-            nicegui.ui.label("Details").style('font-size: 20px')
-            nicegui.ui.button(text="memory", on_click=lambda: right_drawer.toggle(), icon='arrow_right').props('flat color=white')
-
-        return header
-
-    def update_right_drawer(self, right_drawer: RightDrawer) -> None:
-        right_drawer.style('background-color: #ebf1fa')
-        right_drawer.props(":width=\"500\"")
-        right_drawer.classes("flex flex-col h-full")
-
+    def fill_right_drawer(self) -> None:
+        self.right_drawer.clear()
         agent_id = self.get_agent_id()
-        if agent_id is None:
-            return
 
-        with nicegui.ui.tabs() as tabs:
-            local_memory = nicegui.ui.tab("local", "Local (ID 3)")
-            global_memory = nicegui.ui.tab("global", "Global")
+        with self.right_drawer:
+            with nicegui.ui.tabs() as tabs:
+                global_memory = nicegui.ui.tab("global", "Global")
+                if agent_id is not None:
+                    local_memory = nicegui.ui.tab("local", f"Local (#{agent_id})")
 
-        with nicegui.ui.tab_panels(tabs, value=local_memory).classes("flex-1"):
-            with nicegui.ui.tab_panel(local_memory):
-                self.memory_tables(agent_id, True)
+            with nicegui.ui.tab_panels(tabs, value=global_memory) as tab_panels:
+                tab_panels.classes("flex-1")
 
-            with nicegui.ui.tab_panel(global_memory):
-                self.memory_tables(agent_id, False)
+                if agent_id is not None:
+                    with nicegui.ui.tab_panel(local_memory):
+                        self.memory_tables(agent_id, True)
 
-    def _get_memory_drawer(self) -> RightDrawer:
-        with nicegui.ui.right_drawer(top_corner=False, bottom_corner=False, value=False) as right_drawer:
-            self.update_right_drawer(right_drawer)
-
-        return right_drawer
+                with nicegui.ui.tab_panel(global_memory):
+                    self.memory_tables(agent_id, False)
 
     def get_agent_id(self) -> str | None:
         if len(self.agents_table.selected) < 1:
@@ -162,32 +196,39 @@ class View:
         agent_id = selected["id"]
         return agent_id
 
-    def update_details_view(self) -> None:
-        agent_id = self.get_agent_id()
-        if agent_id is None:
-            self.empty_main()
-            return
-
-        agent_details = self.get_agent_details_from_model(agent_id)
-
+    def fill_main(self) -> None:
         self.main_section.clear()
-        with self.main_section:
-            nicegui.ui.label(agent_details.task).classes("text-2xl flex-none")
-            nicegui.ui.label(
-                f"{agent_details.summary} [This is the progress report.]"
-            ).classes("flex-none")
 
-            # grow dynamically
-            with nicegui.ui.scroll_area().style('background-color: #f0f4fa').classes("flex-1"):
-                for i, each_step in enumerate(agent_details.steps):
-                    with nicegui.ui.row().classes("justify-between flex items-center"):
+        agent_id = self.get_agent_id()
+        with self.main_section:
+            if agent_id is None:
+                message = nicegui.ui.label("no agent selected")
+                message.classes("text-2xl flex-none")
+                return
+
+            agent_details = self.get_agent_details_from_model(agent_id)
+
+            label_task = nicegui.ui.label(agent_details.task)
+            label_task.classes("text-2xl flex-none")
+
+            label_progress = nicegui.ui.label(f"{agent_details.summary} [This is the progress report.]")
+            label_progress.classes("flex-none")
+
+            with nicegui.ui.scroll_area() as scroll_area:
+                scroll_area.style('background-color: #f0f4fa')
+                scroll_area.classes("flex-1")
+
+                for each_step in agent_details.steps:
+                    with nicegui.ui.row() as action_row:
+                        action_row.classes("justify-between flex items-center")
                         label_thought = nicegui.ui.label(each_step.thought)
                         label_thought.classes("flex-1 m-3 p-3 bg-blue-300 rounded-lg")
                         action_dialog = self.show_action(each_step.action_id, each_step.arguments)
                         action_button = nicegui.ui.button("show action", on_click=action_dialog.open)
                         action_button.classes("mx-5")
 
-                    with nicegui.ui.row().classes("justify-between flex items-center"):
+                    with nicegui.ui.row() as fact_row:
+                        fact_row.classes("justify-between flex items-center")
                         each_fact = self.get_fact_from_model(each_step.fact_id)
                         label_fact = nicegui.ui.label(f"{each_fact} (fact #{each_step.fact_id})")
                         label_fact.classes("flex-1 m-3 p-3 bg-green-300 rounded-lg")
@@ -211,33 +252,12 @@ class View:
     def show_result(self, result: str) -> Dialog:
         with nicegui.ui.dialog() as dialog, nicegui.ui.card():
             nicegui.ui.label(result)
+
         return dialog
 
-    def thought_details(self) -> None:
-        print("show action (action_id) and action arguments")
-
-    def fact_details(self) -> None:
-        print("show action result")
-
-    def _get_all_agents_drawer(self) -> LeftDrawer:
-        with nicegui.ui.left_drawer(top_corner=False, bottom_corner=False).style('background-color: #d7e3f4').classes("flex flex-col h-full") as left_drawer:
-            columns = [
-                {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"},
-                {"name": "task", "label": "Task", "field": "task", "required": True, "align": "left", "type": "text"},
-                {"name": "status", "label": "Status", "field": "status", "required": True, "align": "left", "type": "text"},
-            ]
-            with nicegui.ui.scroll_area().classes("flex-1"):
-                rows = self.get_agents_as_rows_from_model()
-                self.agents_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="single", on_select=self.agent_changed)
-                self.empty_main()
-
-            nicegui.ui.separator().classes("my-5")
-            nicegui.ui.button("New task", on_click=self.get_dialog)
-
-            return left_drawer
-
     def agent_changed(self) -> None:
-        self.update_details_view()
+        self.fill_main()
+        self.fill_right_drawer()
 
     async def get_dialog(self) -> None:
         llms = ["chatgpt-3.5-turbo", "gpt-4", "llama", "etc."]
@@ -249,8 +269,11 @@ class View:
                 button_ok.disable()
 
         with nicegui.ui.dialog() as dialog, nicegui.ui.card():
-            nicegui.ui.label("Set up agent").classes("text-xl")
-            text_area = nicegui.ui.textarea(placeholder="Task", label="Enter the agent's task", on_change=enable_ok_button).classes("w-full")
+            heading = nicegui.ui.label("Set up agent")
+            heading.classes("text-xl")
+
+            text_area = nicegui.ui.textarea(placeholder="Task", label="Enter the agent's task", on_change=enable_ok_button)
+            text_area.classes("w-full")
 
             with nicegui.ui.row():
                 with nicegui.ui.column():
@@ -303,17 +326,7 @@ class View:
             agent_view = self.add_agent_to_model(setup)
             self.add_agent_rows([agent_view])
 
-    def get_empty_main(self) -> Element:
-        with nicegui.ui.row().classes("flex flex-col h-full w-full") as main_section:
-            nicegui.ui.label("no agent selected").classes("text-2xl flex-none")
-        return main_section
-
-    def empty_main(self) -> None:
-        self.main_section.clear()
-        with self.main_section:
-            nicegui.ui.label("no agent selected").classes("text-2xl flex-none")
-
-    def setup_page(self) -> None:
+    def modify_page(self) -> None:
         nicegui.ui.query('#c0').classes("h-screen")
         nicegui.ui.query('#c1').classes("h-full")
         nicegui.ui.query('#c2').classes("h-full")
