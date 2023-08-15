@@ -1,6 +1,4 @@
-from new_attempt.controller import Controller
-from new_attempt.model import Model
-from new_attempt.view import View
+from new_attempt.controller.controller import Controller
 
 
 def main():

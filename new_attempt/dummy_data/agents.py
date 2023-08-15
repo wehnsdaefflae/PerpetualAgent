@@ -19,16 +19,20 @@ CAR_STEPS = [
     Step(
         thought="I need to find a car.",
         action_id="0",
+        action_is_local=False,
         arguments={"car": "BMW"},
         result="i8",
         fact_id="0",
+        fact_is_local=False,
     ),
     Step(
         thought="I need to find another car.",
         action_id="1",
+        action_is_local=True,
         arguments={"car": "Mercedes"},
         result="S-Class",
         fact_id="1",
+        fact_is_local=True,
     )
 ]
 
@@ -37,17 +41,21 @@ CAR_AGENT = Agent("0", CAR_ARGUMENTS, _summary="No car so far...", _past_steps=C
 BOOK_STEPS = [
     Step(
         thought="I need to find a book.",
-        action_id="3",
+        action_id="2",
+        action_is_local=False,
         arguments={"book": "The Republic"},
         result="The Republic",
         fact_id="2",
+        fact_is_local=False,
     ),
     Step(
         thought="I need to find another book.",
-        action_id="4",
+        action_id="3",
+        action_is_local=True,
         arguments={"book": "The Prince"},
         result="The Prince",
         fact_id="3",
+        fact_is_local=True,
     )
 ]
 BOOK_ARGUMENTS = AgentArguments(

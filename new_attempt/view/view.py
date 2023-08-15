@@ -1,4 +1,5 @@
 # coding=utf-8
+import json
 from dataclasses import dataclass
 from typing import Literal, Callable, TypedDict
 
@@ -14,12 +15,26 @@ class AgentRow(TypedDict):
 
 
 @dataclass
+class FactView:
+    fact: str
+    fact_id: str
+
+
+@dataclass
+class ActionView:
+    action: str
+    action_id: str
+
+
+@dataclass
 class StepView:
     thought: str
     action_id: str
+    action_is_local: bool
     arguments: dict[str, any]
     result: str
     fact_id: str
+    fact_is_local: bool
 
 
 @dataclass
@@ -43,11 +58,17 @@ class ActionsView:
 
 class View:
     def __init__(self,
-                 add_agent_to_model: Callable[[dict[str, any]], AgentRow],
+                 add_agent_to_model:            Callable[[dict[str, any]], AgentRow],
                  get_agents_as_rows_from_model: Callable[[], list[AgentRow]],
-                 get_agent_details_from_model: Callable[[str], AgentView],
-                 get_fact_from_model: Callable[[str], str]
+                 get_agent_details_from_model:  Callable[[str], AgentView],
+                 get_fact_from_model:           Callable[[str], str],
+                 get_action_from_model:         Callable[[str], str],
+                 get_local_facts:               Callable[[str], list[FactView]],
+                 get_local_actions:             Callable[[str], list[ActionView]],
+                 get_global_facts:              Callable[[], list[FactView]],
+                 get_global_actions:            Callable[[], list[ActionView]],
                  ) -> None:
+
         self.facts_local = list[FactsView]()
         self.facts_global = list[FactsView]()
 
@@ -66,6 +87,11 @@ class View:
         self.get_agents_as_rows_from_model = get_agents_as_rows_from_model
         self.get_agent_details_from_model = get_agent_details_from_model
         self.get_fact_from_model = get_fact_from_model
+        self.get_action_from_model = get_action_from_model
+        self.get_local_facts = get_local_facts
+        self.get_local_actions = get_local_actions
+        self.get_global_facts = get_global_facts
+        self.get_global_actions = get_global_actions
 
         self.run()
 
@@ -99,34 +125,52 @@ class View:
             nicegui.ui.button(text="agents", on_click=lambda: left_drawer.toggle(), icon='arrow_left').props('flat color=white')
             nicegui.ui.label("Details").style('font-size: 20px')
             nicegui.ui.button(text="memory", on_click=lambda: right_drawer.toggle(), icon='arrow_right').props('flat color=white')
+
         return header
 
+    def update_right_drawer(self, right_drawer: RightDrawer) -> None:
+        right_drawer.style('background-color: #ebf1fa')
+        right_drawer.props(":width=\"500\"")
+        right_drawer.classes("flex flex-col h-full")
+
+        agent_id = self.get_agent_id()
+        if agent_id is None:
+            return
+
+        with nicegui.ui.tabs() as tabs:
+            local_memory = nicegui.ui.tab("local", "Local (ID 3)")
+            global_memory = nicegui.ui.tab("global", "Global")
+
+        with nicegui.ui.tab_panels(tabs, value=local_memory).classes("flex-1"):
+            with nicegui.ui.tab_panel(local_memory):
+                self.memory_tables(agent_id, True)
+
+            with nicegui.ui.tab_panel(global_memory):
+                self.memory_tables(agent_id, False)
+
     def _get_memory_drawer(self) -> RightDrawer:
-        with nicegui.ui.right_drawer(top_corner=False, bottom_corner=False, value=False).style('background-color: #ebf1fa').props(":width=\"500\"").classes(
-                "flex flex-col h-full") as right_drawer:
-            with nicegui.ui.tabs() as tabs:
-                local_memory = nicegui.ui.tab("local", "Local (ID 3)")
-                global_memory = nicegui.ui.tab("global", "Global")
-
-            with nicegui.ui.tab_panels(tabs, value=local_memory).classes("flex-1"):
-                with nicegui.ui.tab_panel(local_memory):
-                    self.memory_table()
-
-                with nicegui.ui.tab_panel(global_memory):
-                    self.memory_table()
+        with nicegui.ui.right_drawer(top_corner=False, bottom_corner=False, value=False) as right_drawer:
+            self.update_right_drawer(right_drawer)
 
         return right_drawer
 
-    def change_details_view(self) -> None:
-        self.main_section.clear()
+    def get_agent_id(self) -> str | None:
         if len(self.agents_table.selected) < 1:
-            self.empty_main()
-            return
+            return None
 
         selected, = self.agents_table.selected
         agent_id = selected["id"]
+        return agent_id
+
+    def update_details_view(self) -> None:
+        agent_id = self.get_agent_id()
+        if agent_id is None:
+            self.empty_main()
+            return
+
         agent_details = self.get_agent_details_from_model(agent_id)
 
+        self.main_section.clear()
         with self.main_section:
             nicegui.ui.label(agent_details.task).classes("text-2xl flex-none")
             nicegui.ui.label(
@@ -135,21 +179,39 @@ class View:
 
             # grow dynamically
             with nicegui.ui.scroll_area().style('background-color: #f0f4fa').classes("flex-1"):
-                for each_step in agent_details.steps:
+                for i, each_step in enumerate(agent_details.steps):
                     with nicegui.ui.row().classes("justify-between flex items-center"):
-                        nicegui.ui.label(each_step.thought).classes("flex-1 m-3 p-3 bg-blue-300 rounded-lg").on("click", self.thought_details)
-                        nicegui.ui.button("details", on_click=self.thought_details).classes("mx-5")
+                        label_thought = nicegui.ui.label(each_step.thought)
+                        label_thought.classes("flex-1 m-3 p-3 bg-blue-300 rounded-lg")
+                        action_dialog = self.show_action(each_step.action_id, each_step.arguments)
+                        action_button = nicegui.ui.button("show action", on_click=action_dialog.open)
+                        action_button.classes("mx-5")
 
                     with nicegui.ui.row().classes("justify-between flex items-center"):
                         each_fact = self.get_fact_from_model(each_step.fact_id)
-                        nicegui.ui.label(f"{each_fact} ({each_step.fact_id})").classes("flex-1 m-3 p-3 bg-green-300 rounded-lg").on("click", self.fact_details)
-                        nicegui.ui.button("details", on_click=self.fact_details).classes("mx-5")
+                        label_fact = nicegui.ui.label(f"{each_fact} (fact #{each_step.fact_id})")
+                        label_fact.classes("flex-1 m-3 p-3 bg-green-300 rounded-lg")
+                        result_dialog = self.show_result(each_step.result)
+                        result_button = nicegui.ui.button("show result", on_click=result_dialog.open)
+                        result_button.classes("mx-5")
 
                     nicegui.ui.separator().classes("my-2")
 
             with nicegui.ui.row().classes('justify-around flex-none w-full'):
                 nicegui.ui.button("Pause")
                 nicegui.ui.button("Cancel")
+
+    def show_action(self, action_id: str, arguments: dict[str, any]) -> Dialog:
+        action = self.get_action_from_model(action_id)
+        with nicegui.ui.dialog() as dialog, nicegui.ui.card():
+            nicegui.ui.label(f"{action} (action #{action_id})")
+            nicegui.ui.label(json.dumps(arguments, indent=4))
+        return dialog
+
+    def show_result(self, result: str) -> Dialog:
+        with nicegui.ui.dialog() as dialog, nicegui.ui.card():
+            nicegui.ui.label(result)
+        return dialog
 
     def thought_details(self) -> None:
         print("show action (action_id) and action arguments")
@@ -166,7 +228,7 @@ class View:
             ]
             with nicegui.ui.scroll_area().classes("flex-1"):
                 rows = self.get_agents_as_rows_from_model()
-                self.agents_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="single", on_select=self.change_details_view)
+                self.agents_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="single", on_select=self.agent_changed)
                 self.empty_main()
 
             nicegui.ui.separator().classes("my-5")
@@ -174,7 +236,10 @@ class View:
 
             return left_drawer
 
-    async def get_dialog(self) -> Dialog:
+    def agent_changed(self) -> None:
+        self.update_details_view()
+
+    async def get_dialog(self) -> None:
         llms = ["chatgpt-3.5-turbo", "gpt-4", "llama", "etc."]
 
         def enable_ok_button() -> None:
@@ -238,8 +303,6 @@ class View:
             agent_view = self.add_agent_to_model(setup)
             self.add_agent_rows([agent_view])
 
-        return dialog
-
     def get_empty_main(self) -> Element:
         with nicegui.ui.row().classes("flex flex-col h-full w-full") as main_section:
             nicegui.ui.label("no agent selected").classes("text-2xl flex-none")
@@ -256,7 +319,14 @@ class View:
         nicegui.ui.query('#c2').classes("h-full")
         nicegui.ui.query('#c3').classes("h-full")
 
-    def memory_table(self) -> None:
+    def memory_tables(self, agent_id: str, is_local: bool) -> None:
+        if is_local:
+            facts = self.get_local_facts(agent_id)
+            actions = self.get_local_actions(agent_id)
+        else:
+            facts = self.get_global_facts()
+            actions = self.get_global_actions()
+
         with nicegui.ui.row().classes("flex flex-row full-height"):
             with nicegui.ui.scroll_area().classes("flex-1 full-height"):
                 columns = [

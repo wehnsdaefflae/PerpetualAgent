@@ -1,8 +1,8 @@
 from dataclasses import asdict
 
 from new_attempt.agent import Agent, AgentArguments
-from new_attempt.model import Model
-from new_attempt.view import View, AgentRow, AgentView, StepView
+from new_attempt.model.model import Model
+from new_attempt.view.view import View, AgentRow, AgentView, StepView, FactView, ActionView
 
 
 class Controller:
@@ -16,7 +16,33 @@ class Controller:
             self.get_agents_as_rows_from_model,
             self.get_agent_details_from_model,
             self.get_fact_from_model,
+            self.get_action_from_model,
+            self.get_local_facts,
+            self.get_local_actions,
+            self.get_global_facts,
+            self.get_global_actions,
         )
+
+    def get_local_facts(self, agent_id: str) -> list[FactView]:
+        agent = self.model.agent_storage.get_agent(agent_id)
+        local_fact_storage = agent.local_fact_storage
+        return [FactView(fact, fact_id) for fact_id, fact in local_fact_storage.facts.items()]
+
+    def get_local_actions(self, agent_id: str) -> list[ActionView]:
+        agent = self.model.agent_storage.get_agent(agent_id)
+        local_action_storage = agent.local_action_storage
+        return [ActionView(action, action_id) for action_id, action in local_action_storage.actions.items()]
+
+    def get_global_facts(self) -> list[FactView]:
+        global_fact_storage = self.model.fact_storage   # or Agent.global_fact_storage
+        return [FactView(fact, fact_id) for fact_id, fact in global_fact_storage.facts.items()]
+
+    def get_global_actions(self) -> list[ActionView]:
+        global_action_storage = self.model.action_storage   # or Agent.global_action_storage
+        return [ActionView(action, action_id) for action_id, action in global_action_storage.actions.items()]
+
+    def get_action_from_model(self, action_id: str) -> str:
+        return self.model.action_storage.get_action(action_id)
 
     def get_fact_from_model(self, fact_id: str) -> str:
         return self.model.fact_storage.get_fact(fact_id)
