@@ -1,3 +1,4 @@
+# coding=utf-8
 from new_attempt.agent import Step, AgentArguments, Agent
 
 CAR_ARGUMENTS = AgentArguments(

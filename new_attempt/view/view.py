@@ -4,7 +4,9 @@ from dataclasses import dataclass
 from typing import Literal, Callable, TypedDict
 
 import nicegui
+from nicegui.elements.button import Button
 from nicegui.elements.dialog import Dialog
+from nicegui.elements.table import Table
 from nicegui.page_layout import LeftDrawer, RightDrawer, Element, Header, Footer
 
 
@@ -69,11 +71,8 @@ class View:
                  get_global_actions:            Callable[[], list[ActionView]],
                  ) -> None:
 
-        self.facts_local = list[FactsView]()
-        self.facts_global = list[FactsView]()
-
-        self.actions_local = list[ActionsView]()
-        self.actions_global = list[ActionsView]()
+        self.selected_fact_rows = list[dict[str, any]]()
+        self.selected_action_rows = list[dict[str, any]]()
 
         self.steps = list[StepView]()
 
@@ -194,12 +193,15 @@ class View:
             with nicegui.ui.tab_panels(tabs, value=global_memory if agent_id is None else local_memory) as tab_panels:
                 tab_panels.classes("flex-1")
 
-                if agent_id is not None:
+                if agent_id is None:
+                    self.local_actions_table, self.local_facts_table = None, None
+
+                else:
                     with nicegui.ui.tab_panel(local_memory):
-                        self.memory_tables(agent_id, True)
+                        self.local_actions_table, self.local_facts_table = self.memory_tables(agent_id, True)
 
                 with nicegui.ui.tab_panel(global_memory):
-                    self.memory_tables(agent_id, False)
+                    self.global_actions_table, self.global_facts_table = self.memory_tables(agent_id, False)
 
     def get_agent_id(self) -> str | None:
         if len(self.agents_table.selected) < 1:
@@ -339,11 +341,26 @@ class View:
             agent_view = self.add_agent_to_model(setup)
             self.add_agent_rows([agent_view])
 
-    def update_memory_buttons(self) -> None:
-        # todo: enable globalize and delete button, when at least one row is selected
-        pass
+    def update_memory_buttons(self, buttons: list[Button], enable: bool) -> None:
+        if enable:
+            for each_button in buttons:
+                each_button.enable()
+        else:
 
-    def memory_tables(self, agent_id: str, is_local: bool) -> None:
+            for each_button in buttons:
+                each_button.disable()
+
+    def update_selected_actions(self, selected_actions: list[dict[str, any]], buttons: list[Button]) -> None:
+        print(selected_actions)
+        self.selected_action_rows = selected_actions.copy()
+        self.update_memory_buttons(buttons, 0 < len(selected_actions))
+
+    def update_selected_facts(self, selected_facts: list[dict[str, any]], buttons: list[Button]) -> None:
+        print(selected_facts)
+        self.selected_fact_rows = selected_facts.copy()
+        self.update_memory_buttons(buttons, 0 < len(selected_facts))
+
+    def memory_tables(self, agent_id: str, is_local: bool) -> tuple[Table, Table]:
         if is_local:
             facts = self.get_local_facts(agent_id)
             actions = self.get_local_actions(agent_id)
@@ -358,6 +375,7 @@ class View:
             with nicegui.ui.row() as row:
                 row.classes("flex flex-1 flex-row full-height full-width")
 
+                move_button, delete_button = None, None
                 with nicegui.ui.scroll_area() as actions_scroll_area:
                     actions_scroll_area.classes("flex-1 full-height")
 
@@ -369,11 +387,8 @@ class View:
                         {"id": each_action.action_id, "action": each_action.action} for each_action in actions
                     ]
                     # details (remove?, persist?)
-                    actions_table = nicegui.ui.table(columns=columns, rows=rows, row_key="action", selection="multiple", on_select=self.update_memory_buttons)
-                    if is_local:
-                        self.local_actions_table = actions_table
-                    else:
-                        self.global_actions_table = actions_table
+                    actions_table = nicegui.ui.table(columns=columns, rows=rows, row_key="action", selection="multiple")
+                    actions_table.on("selection", lambda: self.update_selected_actions(actions_table.selected, [move_button, delete_button]))
                     actions_table.style('background-color: #ebf1fa')
 
                 with nicegui.ui.scroll_area() as facts_scroll_area:
@@ -387,11 +402,8 @@ class View:
                         {"id": each_fact.fact_id, "fact": each_fact.fact} for each_fact in facts
                     ]
                     # details (remove?, persist?)
-                    facts_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="multiple", on_select=self.update_memory_buttons)
-                    if is_local:
-                        self.local_facts_table = facts_table
-                    else:
-                        self.global_facts_table = facts_table
+                    facts_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="multiple")
+                    facts_table.on("selection", lambda: self.update_selected_facts(facts_table.selected, [move_button, delete_button]))
                     facts_table.style('background-color: #ebf1fa')
 
             with nicegui.ui.row() as button_row:
@@ -401,3 +413,5 @@ class View:
 
                 delete_button = nicegui.ui.button("Delete")
                 delete_button.disable()
+
+        return actions_table, facts_table
