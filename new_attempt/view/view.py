@@ -131,10 +131,8 @@ class View:
         self.fill_left_drawer()
         self.fill_main()
         self.fill_right_drawer()
+        self.fill_footer()
 
-        _ = self._add_footer()
-
-        # self.get_empty_main()
         nicegui.ui.run()
 
     def fill_header(self) -> None:
@@ -162,11 +160,10 @@ class View:
             nicegui.ui.button("New task", on_click=self.get_dialog)
 
 
-    def _add_footer(self) -> Footer:
-        with nicegui.ui.footer() as footer:
+    def fill_footer(self) -> None:
+        with self.footer:
             nicegui.ui.label("Status updates from agents, incl. agent number")
 
-        return footer
 
     def fill_right_drawer(self) -> None:
         self.right_drawer.clear()
@@ -340,23 +337,32 @@ class View:
             facts = self.get_global_facts()
             actions = self.get_global_actions()
 
-        with nicegui.ui.row().classes("flex flex-row full-height"):
-            with nicegui.ui.scroll_area().classes("flex-1 full-height"):
-                columns = [
-                    {"name": "fact", "label": "Fact", "field": "fact", "required": True, "align": "left", "type": "text"}
-                ]
-                rows = [
-                    {"fact": f"fact {i}"} for i in range(1, 51)
-                ]
-                # details (remove?, persist?)
-                nicegui.ui.table(columns=columns, rows=rows, row_key="fact").style('background-color: #ebf1fa')
+        with nicegui.ui.row() as row:
+            row.classes("flex flex-row full-height")
+            with nicegui.ui.scroll_area() as facts_scroll_area:
+                facts_scroll_area.classes("flex-1 full-height")
 
-            with nicegui.ui.scroll_area().classes("flex-1 full-height"):
                 columns = [
-                    {"name": "action", "label": "Action", "field": "action", "required": True, "align": "left", "type": "text"}
+                    {"name": "fact", "label": "Fact", "field": "fact", "required": True, "align": "left", "type": "text"},
+                    {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"}
                 ]
                 rows = [
-                    {"action": f"action {i}"} for i in range(1, 51)
+                    {"id": each_fact.fact_id, "fact": each_fact.fact} for each_fact in facts
                 ]
                 # details (remove?, persist?)
-                nicegui.ui.table(columns=columns, rows=rows, row_key="action").style('background-color: #ebf1fa')
+                facts_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id")
+                facts_table.style('background-color: #ebf1fa')
+
+            with nicegui.ui.scroll_area() as actions_scroll_area:
+                actions_scroll_area.classes("flex-1 full-height")
+
+                columns = [
+                    {"name": "action", "label": "Action", "field": "action", "required": True, "align": "left", "type": "text"},
+                    {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"}
+                ]
+                rows = [
+                    {"id": each_action.action_id, "action": each_action.action} for each_action in actions
+                ]
+                # details (remove?, persist?)
+                actions_table = nicegui.ui.table(columns=columns, rows=rows, row_key="action")
+                actions_table.style('background-color: #ebf1fa')

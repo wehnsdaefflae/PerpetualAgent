@@ -3,8 +3,8 @@ import threading
 from dataclasses import dataclass
 from typing import NamedTuple
 
-from new_attempt.dummy_data.actions import ACTIONS
-from new_attempt.dummy_data.facts import FACTS
+from new_attempt.dummy_data.actions import GLOBAL_ACTIONS, LOCAL_ACTIONS
+from new_attempt.dummy_data.facts import GLOBAL_FACTS, LOCAL_FACTS
 from new_attempt.model.storages.action_storage import ActionStorage
 from new_attempt.model.storages.fact_storage import FactStorage
 
@@ -40,8 +40,8 @@ class Step:
 
 
 class Agent(threading.Thread):
-    global_fact_storage = FactStorage(_facts=FACTS)             # same data source as in model.model.Model
-    global_action_storage = ActionStorage(_actions=ACTIONS)     # same data source as in model.model.Model
+    global_fact_storage = FactStorage(_facts=GLOBAL_FACTS)             # same data source as in model.model.Model
+    global_action_storage = ActionStorage(_actions=GLOBAL_ACTIONS)     # same data source as in model.model.Model
 
     def __init__(self, agent_id: str, arguments: AgentArguments, max_steps: int = 20, _summary: str | None = None, _past_steps: list[Step] | None = None) -> None:
         super().__init__()
@@ -66,8 +66,8 @@ class Agent(threading.Thread):
         else:
             self.past_steps = list[Step](_past_steps[-max_steps:])
 
-        self.local_fact_storage = FactStorage()
-        self.local_action_storage = ActionStorage()
+        self.local_fact_storage = FactStorage(_facts=LOCAL_FACTS[self.agent_id])
+        self.local_action_storage = ActionStorage(_actions=LOCAL_ACTIONS[self.agent_id])
 
     def _infer(self, user_input: str, summary: str) -> str:
         thought = ""
