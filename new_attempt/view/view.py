@@ -355,10 +355,10 @@ class View:
         self.selected_action_rows = selected_actions.copy()
         self.update_memory_buttons(buttons, 0 < len(selected_actions))
 
-    def update_selected_facts(self, selected_facts: list[dict[str, any]], buttons: list[Button]) -> None:
+    def update_selected_facts(self, selected_facts: list[dict[str, any]], buttons: list[Button | None]) -> None:
         print(selected_facts)
         self.selected_fact_rows = selected_facts.copy()
-        self.update_memory_buttons(buttons, 0 < len(selected_facts))
+        self.update_memory_buttons([each_button for each_button in buttons if each_button is not None], 0 < len(selected_facts))
 
     def memory_tables(self, agent_id: str, is_local: bool) -> tuple[Table, Table]:
         if is_local:
