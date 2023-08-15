@@ -77,6 +77,11 @@ class View:
 
         self.steps = list[StepView]()
 
+        self.local_facts_table = None
+        self.local_actions_table = None
+        self.global_facts_table = None
+        self.global_actions_table = None
+
         self.header = None
         self.left_drawer = None
         self.right_drawer = None
@@ -103,6 +108,12 @@ class View:
             return
 
         self.agents_table.add_rows(*new_rows)
+
+    def modify_page(self) -> None:
+        nicegui.ui.query('#c0').classes("h-screen")
+        nicegui.ui.query('#c1').classes("h-full")
+        nicegui.ui.query('#c2').classes("h-full")
+        nicegui.ui.query('#c3').classes("h-full")
 
     def setup_sections(self) -> None:
         self.header = nicegui.ui.header(elevated=True)
@@ -157,25 +168,30 @@ class View:
                 self.agents_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="single", on_select=self.agent_changed)
 
             nicegui.ui.separator().classes("my-5")
-            nicegui.ui.button("New task", on_click=self.get_dialog)
-
+            with nicegui.ui.row() as row:
+                row.classes("justify-around full-width flex-none")
+                nicegui.ui.button("New task", on_click=self.get_dialog)
+                nicegui.ui.button("Pause all")
 
     def fill_footer(self) -> None:
         with self.footer:
             nicegui.ui.label("Status updates from agents, incl. agent number")
 
+    def switched_memory_tab(self) -> None:
+        print("switched")
 
     def fill_right_drawer(self) -> None:
         self.right_drawer.clear()
         agent_id = self.get_agent_id()
 
         with self.right_drawer:
-            with nicegui.ui.tabs() as tabs:
-                global_memory = nicegui.ui.tab("global", "Global")
+            with nicegui.ui.tabs(on_change=self.switched_memory_tab) as tabs:
                 if agent_id is not None:
                     local_memory = nicegui.ui.tab("local", f"Local (#{agent_id})")
 
-            with nicegui.ui.tab_panels(tabs, value=global_memory) as tab_panels:
+                global_memory = nicegui.ui.tab("global", "Global")
+
+            with nicegui.ui.tab_panels(tabs, value=global_memory if agent_id is None else local_memory) as tab_panels:
                 tab_panels.classes("flex-1")
 
                 if agent_id is not None:
@@ -235,7 +251,7 @@ class View:
 
                     nicegui.ui.separator().classes("my-2")
 
-            with nicegui.ui.row().classes('justify-around flex-none w-full'):
+            with nicegui.ui.row().classes('justify-around flex-none full-width'):
                 nicegui.ui.button("Pause")
                 nicegui.ui.button("Cancel")
 
@@ -296,7 +312,7 @@ class View:
 
             confirm_actions = nicegui.ui.checkbox("Confirm actions / start", value=True)
 
-            with nicegui.ui.row().classes('justify-around w-full'):
+            with nicegui.ui.row().classes("justify-around full-width flex-none"):
                 button_ok = nicegui.ui.button("OK", color="primary", on_click=lambda: dialog.submit("done"))
                 button_ok.disable()
                 nicegui.ui.button("Cancel", color="secondary", on_click=dialog.close)
@@ -323,46 +339,65 @@ class View:
             agent_view = self.add_agent_to_model(setup)
             self.add_agent_rows([agent_view])
 
-    def modify_page(self) -> None:
-        nicegui.ui.query('#c0').classes("h-screen")
-        nicegui.ui.query('#c1').classes("h-full")
-        nicegui.ui.query('#c2').classes("h-full")
-        nicegui.ui.query('#c3').classes("h-full")
+    def update_memory_buttons(self) -> None:
+        # todo: enable globalize and delete button, when at least one row is selected
+        pass
 
     def memory_tables(self, agent_id: str, is_local: bool) -> None:
         if is_local:
             facts = self.get_local_facts(agent_id)
             actions = self.get_local_actions(agent_id)
+
         else:
             facts = self.get_global_facts()
             actions = self.get_global_actions()
 
-        with nicegui.ui.row() as row:
-            row.classes("flex flex-row full-height")
-            with nicegui.ui.scroll_area() as facts_scroll_area:
-                facts_scroll_area.classes("flex-1 full-height")
+        with nicegui.ui.column() as column:
+            column.classes("flex flex-col full-height full-width")
 
-                columns = [
-                    {"name": "fact", "label": "Fact", "field": "fact", "required": True, "align": "left", "type": "text"},
-                    {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"}
-                ]
-                rows = [
-                    {"id": each_fact.fact_id, "fact": each_fact.fact} for each_fact in facts
-                ]
-                # details (remove?, persist?)
-                facts_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id")
-                facts_table.style('background-color: #ebf1fa')
+            with nicegui.ui.row() as row:
+                row.classes("flex flex-1 flex-row full-height full-width")
 
-            with nicegui.ui.scroll_area() as actions_scroll_area:
-                actions_scroll_area.classes("flex-1 full-height")
+                with nicegui.ui.scroll_area() as actions_scroll_area:
+                    actions_scroll_area.classes("flex-1 full-height")
 
-                columns = [
-                    {"name": "action", "label": "Action", "field": "action", "required": True, "align": "left", "type": "text"},
-                    {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"}
-                ]
-                rows = [
-                    {"id": each_action.action_id, "action": each_action.action} for each_action in actions
-                ]
-                # details (remove?, persist?)
-                actions_table = nicegui.ui.table(columns=columns, rows=rows, row_key="action")
-                actions_table.style('background-color: #ebf1fa')
+                    columns = [
+                        {"name": "action", "label": "Action", "field": "action", "required": True, "align": "left", "type": "text"},
+                        {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"}
+                    ]
+                    rows = [
+                        {"id": each_action.action_id, "action": each_action.action} for each_action in actions
+                    ]
+                    # details (remove?, persist?)
+                    actions_table = nicegui.ui.table(columns=columns, rows=rows, row_key="action", selection="multiple", on_select=self.update_memory_buttons)
+                    if is_local:
+                        self.local_actions_table = actions_table
+                    else:
+                        self.global_actions_table = actions_table
+                    actions_table.style('background-color: #ebf1fa')
+
+                with nicegui.ui.scroll_area() as facts_scroll_area:
+                    facts_scroll_area.classes("flex-1 full-height")
+
+                    columns = [
+                        {"name": "fact", "label": "Fact", "field": "fact", "required": True, "align": "left", "type": "text"},
+                        {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"}
+                    ]
+                    rows = [
+                        {"id": each_fact.fact_id, "fact": each_fact.fact} for each_fact in facts
+                    ]
+                    # details (remove?, persist?)
+                    facts_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="multiple", on_select=self.update_memory_buttons)
+                    if is_local:
+                        self.local_facts_table = facts_table
+                    else:
+                        self.global_facts_table = facts_table
+                    facts_table.style('background-color: #ebf1fa')
+
+            with nicegui.ui.row() as button_row:
+                button_row.classes("flex-none justify-around full-width")
+                move_button = nicegui.ui.button("Globalize" if is_local else "Localize")
+                move_button.disable()
+
+                delete_button = nicegui.ui.button("Delete")
+                delete_button.disable()
