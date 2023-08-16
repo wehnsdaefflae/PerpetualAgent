@@ -71,8 +71,8 @@ class View:
                  get_global_actions:            Callable[[], list[ActionView]],
                  ) -> None:
 
-        self.selected_fact_rows = list[dict[str, any]]()
-        self.selected_action_rows = list[dict[str, any]]()
+        self.selected_fact_ids = list[dict[str, any]]()
+        self.selected_action_ids = list[dict[str, any]]()
 
         self.steps = list[StepView]()
 
@@ -177,7 +177,7 @@ class View:
             nicegui.ui.label("Status updates from agents, incl. agent number")
 
     def switched_memory_tab(self) -> None:
-        print("switched")
+        print("switched tab")
 
     def fill_right_drawer(self) -> None:
         self.right_drawer.clear()
@@ -312,7 +312,7 @@ class View:
 
             nicegui.ui.separator()
 
-            confirm_actions = nicegui.ui.checkbox("Confirm actions / start", value=True)
+            confirm_actions = nicegui.ui.checkbox("Requires confirmation", value=True)
 
             with nicegui.ui.row().classes("justify-around full-width flex-none"):
                 button_ok = nicegui.ui.button("OK", color="primary", on_click=lambda: dialog.submit("done"))
@@ -350,15 +350,17 @@ class View:
             for each_button in buttons:
                 each_button.disable()
 
-    def update_selected_actions(self, selected_actions: list[dict[str, any]], buttons: list[Button]) -> None:
-        print(selected_actions)
-        self.selected_action_rows = selected_actions.copy()
-        self.update_memory_buttons(buttons, 0 < len(selected_actions))
+    def update_selected_actions(self, selected_action_rows: list[dict[str, any]], buttons: list[Button]) -> None:
+        self.selected_action_ids.clear()
+        for each_action in selected_action_rows:
+            self.selected_action_ids.append(each_action["id"])
+        self.update_memory_buttons(buttons, 0 < len(selected_action_rows))
 
-    def update_selected_facts(self, selected_facts: list[dict[str, any]], buttons: list[Button | None]) -> None:
-        print(selected_facts)
-        self.selected_fact_rows = selected_facts.copy()
-        self.update_memory_buttons([each_button for each_button in buttons if each_button is not None], 0 < len(selected_facts))
+    def update_selected_facts(self, selected_fact_rows: list[dict[str, any]], buttons: list[Button | None]) -> None:
+        self.selected_fact_ids.clear()
+        for each_fact in selected_fact_rows:
+            self.selected_fact_ids.append(each_fact["id"])
+        self.update_memory_buttons([each_button for each_button in buttons if each_button is not None], 0 < len(selected_fact_rows))
 
     def memory_tables(self, agent_id: str, is_local: bool) -> tuple[Table, Table]:
         if is_local:
