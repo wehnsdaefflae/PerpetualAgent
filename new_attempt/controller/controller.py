@@ -8,7 +8,6 @@ from new_attempt.view.view import View, AgentRow, AgentView, StepView, FactView,
 class Controller:
     def __init__(self) -> None:
         self.model = Model(
-            self.send_new_agent_to_view
         )
 
         self.view = View(
@@ -68,7 +67,11 @@ class Controller:
 
     def add_agent_to_model(self, agent_setup: dict[str, any]) -> AgentRow:
         arguments = AgentArguments(**agent_setup)
-        agent = self.model.new_agent(arguments)
+        agent_id = "0"
+        agent = Agent(agent_id, arguments)
+        self.model.add_agent(agent)
+        self.send_new_agent_to_view(agent)
+
         return {"id": agent.agent_id, "task": agent.arguments.task, "status": agent.status}
 
     def send_new_agent_to_view(self, agent: Agent) -> None:

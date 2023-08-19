@@ -1,5 +1,5 @@
 from __future__ import annotations
-from new_attempt.agent import Agent, AgentArguments
+from new_attempt.agent import Agent
 
 
 class AgentStorage:
@@ -18,8 +18,9 @@ class AgentStorage:
     def get_agent(self, agent_id: str) -> Agent:
         return self.agents[agent_id]
 
-    def add_agent(self, agent_arguments: AgentArguments) -> Agent:
+    def add_agent(self, agent: Agent) -> Agent:
         agent_id = f"{len(self.agents)}"
+        agent_arguments = agent.arguments
         agent = Agent(agent_id, agent_arguments)
         self.agents[agent_id] = agent
         return agent

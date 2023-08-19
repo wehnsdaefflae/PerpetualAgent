@@ -7,7 +7,6 @@ import nicegui
 from nicegui.elements.button import Button
 from nicegui.elements.dialog import Dialog
 from nicegui.elements.table import Table
-from nicegui.page_layout import LeftDrawer, RightDrawer, Element, Header, Footer
 
 
 class AgentRow(TypedDict):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 import threading
 from dataclasses import dataclass
-from typing import NamedTuple
+from typing import NamedTuple, Literal
 
 from new_attempt.dummy_data.actions import GLOBAL_ACTIONS, LOCAL_ACTIONS
 from new_attempt.dummy_data.facts import GLOBAL_FACTS, LOCAL_FACTS
@@ -43,7 +43,9 @@ class Agent(threading.Thread):
     global_fact_storage = FactStorage(_facts=GLOBAL_FACTS)             # same data source as in model.model.Model
     global_action_storage = ActionStorage(_actions=GLOBAL_ACTIONS)     # same data source as in model.model.Model
 
-    def __init__(self, agent_id: str, arguments: AgentArguments, max_steps: int = 20, _summary: str | None = None, _past_steps: list[Step] | None = None) -> None:
+    def __init__(self,
+                 agent_id: str, arguments: AgentArguments, max_steps: int = 20,
+                 _status: Literal["finished", "pending", "working", "paused"] = "pending", _summary: str = "", _past_steps: list[Step] | None = None) -> None:
         super().__init__()
         self.agent_id = agent_id
         self.arguments = arguments
@@ -54,11 +56,8 @@ class Agent(threading.Thread):
         write_actions_local: bool
         """
 
-        self.status = "working"
-        if _summary is None:
-            self.summary = ""
-        else:
-            self.summary = _summary
+        self.status = _status
+        self.summary = _summary
 
         self.max_steps = max_steps
         if _past_steps is None:
