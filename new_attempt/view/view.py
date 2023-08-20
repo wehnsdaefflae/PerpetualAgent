@@ -1,18 +1,14 @@
 # coding=utf-8
 import json
-from dataclasses import dataclass
-from typing import Literal, Callable, TypedDict
+from dataclasses import dataclass, asdict
+from typing import Literal, Callable
 
 import nicegui
 from nicegui.elements.button import Button
 from nicegui.elements.dialog import Dialog
 from nicegui.elements.table import Table
 
-
-class AgentRow(TypedDict):
-    id: str
-    task: str
-    status: Literal["finished", "pending", "working", "paused"]
+from new_attempt.agent import AgentArguments
 
 
 @dataclass
@@ -40,7 +36,7 @@ class StepView:
 
 @dataclass
 class AgentView:
-    id: str
+    agent_id: str
     task: str
     summary: str
     status: Literal["finished", "pending", "working", "paused"]
@@ -59,8 +55,8 @@ class ActionsView:
 
 class View:
     def __init__(self,
-                 add_agent_to_model:            Callable[[dict[str, any]], AgentRow],
-                 get_agents_as_rows_from_model: Callable[[], list[AgentRow]],
+                 add_agent_to_model:            Callable[[AgentArguments], None],
+                 get_agents_from_model:         Callable[[], list[AgentView]],
                  get_agent_details_from_model:  Callable[[str], AgentView],
                  get_fact_from_model:           Callable[[str], str],
                  get_action_from_model:         Callable[[str], str],
@@ -89,7 +85,7 @@ class View:
         self.agents_table = None
 
         self.add_agent_to_model = add_agent_to_model
-        self.get_agents_as_rows_from_model = get_agents_as_rows_from_model
+        self.get_agents_from_model = get_agents_from_model
         self.get_agent_details_from_model = get_agent_details_from_model
         self.get_fact_from_model = get_fact_from_model
         self.get_action_from_model = get_action_from_model
@@ -100,8 +96,8 @@ class View:
 
         self.run()
 
-    def add_agent_rows(self, agent_rows: list[AgentRow]) -> None:
-        new_rows = [each_row for each_row in agent_rows if each_row not in self.agents_table.rows]
+    def add_agents(self, agent_views: list[AgentView]) -> None:
+        new_rows = [each_row for each_row in agent_views if each_row not in self.agents_table.rows]
         if len(new_rows) < 1:
             return
 
@@ -156,13 +152,13 @@ class View:
         self.left_drawer.clear()
         with self.left_drawer:
             columns = [
-                {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"},
+                {"name": "agent_id", "label": "ID", "field": "agent_id", "required": True, "align": "left", "type": "text"},
                 {"name": "task", "label": "Task", "field": "task", "required": True, "align": "left", "type": "text"},
                 {"name": "status", "label": "Status", "field": "status", "required": True, "align": "left", "type": "text"},
             ]
             with nicegui.ui.scroll_area() as scroll_area:
                 scroll_area.classes("flex-1")
-                rows = self.get_agents_as_rows_from_model()
+                rows = [asdict(each_agent) for each_agent in self.get_agents_from_model()]
                 self.agents_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="single", on_select=self.agent_changed)
 
             nicegui.ui.separator().classes("my-5")
@@ -320,25 +316,22 @@ class View:
 
         result = await dialog
         if result is not None:
-            setup = {
-                "task": text_area.value,
-                "read_facts_global": read_facts_global.value,
-                "read_actions_global": read_actions_global.value,
-                "write_facts_local": write_facts_local.value,
-                "write_actions_local": write_actions_local.value,
+            arguments = AgentArguments(
+                task=text_area.value,
+                read_facts_global=read_facts_global.value,
+                read_actions_global=read_actions_global.value,
+                write_facts_local=write_facts_local.value,
+                write_actions_local=write_actions_local.value,
+                confirm_actions=confirm_actions.value,
+                llm_thought=llm_thought.value,
+                llm_action=llm_action.value,
+                llm_parameter=llm_parameter.value,
+                llm_result=llm_result.value,
+                llm_fact=llm_fact.value,
+                llm_summary=llm_summary.value,
+            )
 
-                "confirm_actions": confirm_actions.value,
-
-                "llm_thought": llm_thought.value,
-                "llm_action": llm_action.value,
-                "llm_parameter": llm_parameter.value,
-                "llm_result": llm_result.value,
-                "llm_fact": llm_fact.value,
-                "llm_summary": llm_summary.value,
-            }
-
-            agent_view = self.add_agent_to_model(setup)
-            self.add_agent_rows([agent_view])
+            self.add_agent_to_model(arguments)
 
     def update_memory_buttons(self, buttons: list[Button], enable: bool) -> None:
         if enable:

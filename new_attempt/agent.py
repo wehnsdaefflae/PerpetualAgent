@@ -1,12 +1,10 @@
 from __future__ import annotations
 import threading
 from dataclasses import dataclass
-from typing import NamedTuple, Literal
+from typing import Literal
 
-from new_attempt.dummy_data.actions import GLOBAL_ACTIONS, LOCAL_ACTIONS
-from new_attempt.dummy_data.facts import GLOBAL_FACTS, LOCAL_FACTS
-from new_attempt.model.storages.action_storage import ActionStorage
-from new_attempt.model.storages.fact_storage import FactStorage
+from new_attempt.model.storages.action_interface import ActionInterface
+from new_attempt.model.storages.fact_interface import FactInterface
 
 
 @dataclass
@@ -40,11 +38,29 @@ class Step:
 
 
 class Agent(threading.Thread):
-    global_fact_storage = FactStorage(_facts=GLOBAL_FACTS)             # same data source as in model.model.Model
-    global_action_storage = ActionStorage(_actions=GLOBAL_ACTIONS)     # same data source as in model.model.Model
+    @staticmethod
+    def from_dict(agent_dict: dict[str, any],
+                  global_facts: FactInterface, global_actions: ActionInterface,
+                  local_facts: FactInterface, local_actions: ActionInterface) -> Agent:
+
+        return Agent(
+            agent_dict["agent_id"],
+            agent_dict["arguments"],
+            global_facts,
+            global_actions,
+            local_facts,
+            local_actions,
+            max_steps=agent_dict["max_steps"],
+            _status=agent_dict["status"],
+            _summary=agent_dict["summary"],
+            _past_steps=agent_dict["past_steps"],
+        )
 
     def __init__(self,
-                 agent_id: str, arguments: AgentArguments, max_steps: int = 20,
+                 agent_id: str, arguments: AgentArguments,
+                 global_fact_storage: FactInterface, global_action_storage: ActionInterface,
+                 local_fact_storage: FactInterface, local_action_storage: ActionInterface,
+                 max_steps: int = 20,
                  _status: Literal["finished", "pending", "working", "paused"] = "pending", _summary: str = "", _past_steps: list[Step] | None = None) -> None:
         super().__init__()
         self.agent_id = agent_id
@@ -65,8 +81,19 @@ class Agent(threading.Thread):
         else:
             self.past_steps = list[Step](_past_steps[-max_steps:])
 
-        self.local_fact_storage = FactStorage(_facts=LOCAL_FACTS[self.agent_id])
-        self.local_action_storage = ActionStorage(_actions=LOCAL_ACTIONS[self.agent_id])
+        self.global_fact_storage = global_fact_storage
+        self.global_action_storage = global_action_storage
+        self.local_fact_storage = local_fact_storage
+        self.local_action_storage = local_action_storage
+
+    def to_dict(self) -> dict[str, any]:
+        return {
+            "agent_id":     self.agent_id,
+            "arguments":    self.arguments,
+            "status":       self.status,
+            "summary":      self.summary,
+            "past_steps":   self.past_steps,
+        }
 
     def _infer(self, user_input: str, summary: str) -> str:
         thought = ""
@@ -74,13 +101,13 @@ class Agent(threading.Thread):
         pass
 
     def _retrieve_action_from_repo(self, thought: str) -> str:
-        action = Agent.global_action_storage.retrieve_action(thought)
+        action = self.global_action_storage.retrieve_action(thought)
         if action is None:
             action = ""
         return action
 
     def _retrieve_facts_from_memory(self, thought: str) -> list[str]:
-        return Agent.global_fact_storage.retrieve_facts(thought)
+        return self.global_fact_storage.retrieve_facts(thought)
 
     def _extract_parameters(self, thought: str, retrieved_facts: list[str], selected_action: str) -> dict[str, any]:
         pass
@@ -96,7 +123,7 @@ class Agent(threading.Thread):
 
     def _increase_action_value(self, action: str) -> None:
         # add, if not present
-        Agent.global_action_storage.add_action(str(len(Agent.global_action_storage)), action)
+        self.global_action_storage.add_action(str(len(self.global_action_storage)), action)
         # increase success count
         pass
 
@@ -105,7 +132,7 @@ class Agent(threading.Thread):
         c = 0
         # remove if below threshold
         if c < 0:
-            Agent.global_action_storage.remove_action(action)
+            self.global_action_storage.remove_action(action)
         pass
 
     def _save_summary(self, summary: str, is_fulfilled: bool) -> None:
@@ -121,7 +148,7 @@ class Agent(threading.Thread):
             action_params = self._extract_parameters(thought, retrieved_facts, selected_action)
             result = self._execute_action(selected_action, action_params)
             new_fact, was_successful = self._generate_fact(thought, result)
-            Agent.global_fact_storage.add_fact(new_fact)
+            self.global_fact_storage.add_fact(new_fact)
 
             if was_successful:
                 self._increase_action_value(selected_action)
