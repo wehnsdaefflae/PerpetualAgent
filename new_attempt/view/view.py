@@ -1,107 +1,60 @@
 # coding=utf-8
 import json
-from dataclasses import dataclass, asdict
-from typing import Literal, Callable
+from typing import Callable
 
 import nicegui
 from nicegui.elements.button import Button
 from nicegui.elements.dialog import Dialog
 from nicegui.elements.table import Table
 
-from new_attempt.agent import AgentArguments
-
-
-@dataclass
-class FactView:
-    fact: str
-    fact_id: str
-
-
-@dataclass
-class ActionView:
-    action: str
-    action_id: str
-
-
-@dataclass
-class StepView:
-    thought: str
-    action_id: str
-    action_is_local: bool
-    arguments: dict[str, any]
-    result: str
-    fact_id: str
-    fact_is_local: bool
-
-
-@dataclass
-class AgentView:
-    agent_id: str
-    task: str
-    summary: str
-    status: Literal["finished", "pending", "working", "paused"]
-    steps: list[StepView]
-
-
-@dataclass
-class FactsView:
-    facts: list[str]
-
-
-@dataclass
-class ActionsView:
-    actions: list[str]
+from new_attempt.logic.agent import Agent
+from new_attempt.logic.various import AgentArguments, Fact, Action
 
 
 class View:
     def __init__(self,
-                 add_agent_to_model:            Callable[[AgentArguments], None],
-                 get_agents_from_model:         Callable[[], list[AgentView]],
-                 get_agent_details_from_model:  Callable[[str], AgentView],
-                 get_fact_from_model:           Callable[[str], str],
-                 get_action_from_model:         Callable[[str], str],
-                 get_local_facts:               Callable[[str], list[FactView]],
-                 get_local_actions:             Callable[[str], list[ActionView]],
-                 get_global_facts:              Callable[[], list[FactView]],
-                 get_global_actions:            Callable[[], list[ActionView]],
+                 send_new_agent:    Callable[[AgentArguments], None],
+                 receive_agents:    Callable[[list[str] | None], list[Agent]],
+                 receive_facts:     Callable[[list[str] | None, str | None], list[Fact]],
+                 receive_actions:   Callable[[list[str] | None, str | None], list[Action]],
                  ) -> None:
 
-        self.selected_fact_ids = list[dict[str, any]]()
-        self.selected_action_ids = list[dict[str, any]]()
-
-        self.steps = list[StepView]()
-
+        # content
         self.local_facts_table = None
         self.local_actions_table = None
         self.global_facts_table = None
         self.global_actions_table = None
+        self.agents_table = None
 
+        self.selected_fact_ids = list[dict[str, any]]()
+        self.selected_action_ids = list[dict[str, any]]()
+
+        # layout
         self.header = None
         self.left_drawer = None
         self.right_drawer = None
         self.main_section = None
         self.footer = None
 
-        self.agents_table = None
+        # callbacks
+        self.send_new_agent = send_new_agent
+        self.receive_agents = receive_agents
+        self.receive_facts = receive_facts
+        self.receive_actions = receive_actions
 
-        self.add_agent_to_model = add_agent_to_model
-        self.get_agents_from_model = get_agents_from_model
-        self.get_agent_details_from_model = get_agent_details_from_model
-        self.get_fact_from_model = get_fact_from_model
-        self.get_action_from_model = get_action_from_model
-        self.get_local_facts = get_local_facts
-        self.get_local_actions = get_local_actions
-        self.get_global_facts = get_global_facts
-        self.get_global_actions = get_global_actions
-
+        # start
         self.run()
 
-    def add_agents(self, agent_views: list[AgentView]) -> None:
-        new_rows = [each_row for each_row in agent_views if each_row not in self.agents_table.rows]
-        if len(new_rows) < 1:
-            return
+    def _agent_to_row(self, agent: Agent) -> dict[str, any]:
+        return {
+            "agent_id": agent.agent_id,
+            "task": agent.arguments.task,
+            "status": agent.status,
+        }
 
-        self.agents_table.add_rows(*new_rows)
+    def add_agents(self, agent_views: list[Agent]) -> None:
+        new_rows = [self._agent_to_row(each_agent) for each_agent in agent_views]
+        self.agents_table.add_rows(new_rows)
 
     def modify_page(self) -> None:
         nicegui.ui.query('#c0').classes("h-screen")
@@ -158,7 +111,7 @@ class View:
             ]
             with nicegui.ui.scroll_area() as scroll_area:
                 scroll_area.classes("flex-1")
-                rows = [asdict(each_agent) for each_agent in self.get_agents_from_model()]
+                rows = [self._agent_to_row(each_agent) for each_agent in self.receive_agents(None)]
                 self.agents_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="single", on_select=self.agent_changed)
 
             nicegui.ui.separator().classes("my-5")
@@ -216,30 +169,30 @@ class View:
                 message.classes("text-2xl flex-none")
                 return
 
-            agent_details = self.get_agent_details_from_model(agent_id)
+            agent, = self.receive_agents([agent_id])
 
-            label_task = nicegui.ui.label(agent_details.task)
+            label_task = nicegui.ui.label(agent.action_arguments.task)
             label_task.classes("text-2xl flex-none")
 
-            label_progress = nicegui.ui.label(f"{agent_details.summary} [This is the progress report.]")
+            label_progress = nicegui.ui.label(f"{agent.summary} [This is the progress report.]")
             label_progress.classes("flex-none")
 
             with nicegui.ui.scroll_area() as scroll_area:
                 scroll_area.style('background-color: #f0f4fa')
                 scroll_area.classes("flex-1")
 
-                for each_step in agent_details.steps:
+                for each_step in agent.past_steps:
                     with nicegui.ui.row() as action_row:
                         action_row.classes("justify-between flex items-center")
                         label_thought = nicegui.ui.label(each_step.thought)
                         label_thought.classes("flex-1 m-3 p-3 bg-blue-300 rounded-lg")
-                        action_dialog = self.show_action(each_step.action_id, each_step.arguments)
+                        action_dialog = self.show_action(each_step.action_id, each_step.action_arguments)
                         action_button = nicegui.ui.button("show action", on_click=action_dialog.open)
                         action_button.classes("mx-5")
 
                     with nicegui.ui.row() as fact_row:
                         fact_row.classes("justify-between flex items-center")
-                        each_fact = self.get_fact_from_model(each_step.fact_id)
+                        each_fact, = self.receive_facts([each_step.fact_id], agent_id)
                         label_fact = nicegui.ui.label(f"{each_fact} (fact #{each_step.fact_id})")
                         label_fact.classes("flex-1 m-3 p-3 bg-green-300 rounded-lg")
                         result_dialog = self.show_result(each_step.result)
@@ -253,9 +206,9 @@ class View:
                 nicegui.ui.button("Cancel")
 
     def show_action(self, action_id: str, arguments: dict[str, any]) -> Dialog:
-        action = self.get_action_from_model(action_id)
+        action, = self.receive_actions([action_id], None)
         with nicegui.ui.dialog() as dialog, nicegui.ui.card():
-            nicegui.ui.label(f"{action} (action #{action_id})")
+            nicegui.ui.label(f"{action.action} (action #{action_id})")
             nicegui.ui.label(json.dumps(arguments, indent=4))
         return dialog
 
@@ -331,7 +284,7 @@ class View:
                 llm_summary=llm_summary.value,
             )
 
-            self.add_agent_to_model(arguments)
+            self.send_new_agent(arguments)
 
     def update_memory_buttons(self, buttons: list[Button], enable: bool) -> None:
         if enable:
@@ -356,12 +309,11 @@ class View:
 
     def memory_tables(self, agent_id: str, is_local: bool) -> tuple[Table, Table]:
         if is_local:
-            facts = self.get_local_facts(agent_id)
-            actions = self.get_local_actions(agent_id)
-
+            facts = self.receive_facts(None, agent_id)
+            actions = self.receive_actions(None, agent_id)
         else:
-            facts = self.get_global_facts()
-            actions = self.get_global_actions()
+            facts = self.receive_facts(None, None)
+            actions = self.receive_actions(None, None)
 
         with nicegui.ui.column() as column:
             column.classes("flex flex-col full-height full-width")

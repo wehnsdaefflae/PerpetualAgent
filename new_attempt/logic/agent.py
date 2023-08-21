@@ -1,55 +1,20 @@
 from __future__ import annotations
 import threading
-from dataclasses import dataclass
 from typing import Literal
 
-from new_attempt.model.storages.action_interface import ActionInterface
-from new_attempt.model.storages.fact_interface import FactInterface
-
-
-@dataclass
-class AgentArguments:
-    task: str
-
-    read_facts_global: bool
-    read_actions_global: bool
-    write_facts_local: bool
-    write_actions_local: bool
-
-    confirm_actions: bool
-
-    llm_thought: str
-    llm_action: str
-    llm_parameter: str
-    llm_result: str
-    llm_fact: str
-    llm_summary: str
-
-
-@dataclass
-class Step:
-    thought: str
-    action_id: str
-    action_is_local: bool
-    arguments: dict[str, any]
-    result: str
-    fact_id: str
-    fact_is_local: bool
+from new_attempt.logic.various import AgentArguments, Step, Fact, Action
+from new_attempt.model.storages.generic_storage import VectorStorage
 
 
 class Agent(threading.Thread):
     @staticmethod
-    def from_dict(agent_dict: dict[str, any],
-                  global_facts: FactInterface, global_actions: ActionInterface,
-                  local_facts: FactInterface, local_actions: ActionInterface) -> Agent:
+    def from_dict(agent_dict: dict[str, any], fact_storage: VectorStorage[Fact], action_storage: VectorStorage[Action]) -> Agent:
 
         return Agent(
             agent_dict["agent_id"],
             agent_dict["arguments"],
-            global_facts,
-            global_actions,
-            local_facts,
-            local_actions,
+            fact_storage=fact_storage,
+            action_storage=action_storage,
             max_steps=agent_dict["max_steps"],
             _status=agent_dict["status"],
             _summary=agent_dict["summary"],
@@ -58,19 +23,11 @@ class Agent(threading.Thread):
 
     def __init__(self,
                  agent_id: str, arguments: AgentArguments,
-                 global_fact_storage: FactInterface, global_action_storage: ActionInterface,
-                 local_fact_storage: FactInterface, local_action_storage: ActionInterface,
-                 max_steps: int = 20,
+                 fact_storage: VectorStorage[Fact], action_storage: VectorStorage[Action], max_steps: int = 20,
                  _status: Literal["finished", "pending", "working", "paused"] = "pending", _summary: str = "", _past_steps: list[Step] | None = None) -> None:
         super().__init__()
         self.agent_id = agent_id
         self.arguments = arguments
-        """
-        read_facts_global: bool
-        read_actions_global: bool
-        write_facts_local: bool
-        write_actions_local: bool
-        """
 
         self.status = _status
         self.summary = _summary
@@ -81,10 +38,8 @@ class Agent(threading.Thread):
         else:
             self.past_steps = list[Step](_past_steps[-max_steps:])
 
-        self.global_fact_storage = global_fact_storage
-        self.global_action_storage = global_action_storage
-        self.local_fact_storage = local_fact_storage
-        self.local_action_storage = local_action_storage
+        self.fact_storage = fact_storage
+        self.action_storage = action_storage
 
     def to_dict(self) -> dict[str, any]:
         return {

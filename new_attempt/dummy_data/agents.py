@@ -1,5 +1,6 @@
 # coding=utf-8
-from new_attempt.agent import Step, AgentArguments, Agent
+from new_attempt.logic.agent import Agent
+from new_attempt.logic.various import AgentArguments, Step
 
 CAR_ARGUMENTS = AgentArguments(
     task="I want to buy a car",
@@ -21,7 +22,7 @@ CAR_STEPS = [
         thought="I need to find a car.",
         action_id="0",
         action_is_local=False,
-        arguments={"car": "BMW"},
+        action_arguments={"car": "BMW"},
         result="i8",
         fact_id="0",
         fact_is_local=False,
@@ -30,7 +31,7 @@ CAR_STEPS = [
         thought="I need to find another car.",
         action_id="0",
         action_is_local=True,
-        arguments={"car": "Mercedes"},
+        action_arguments={"car": "Mercedes"},
         result="S-Class",
         fact_id="0",
         fact_is_local=True,
@@ -44,7 +45,7 @@ BOOK_STEPS = [
         thought="I need to find a book.",
         action_id="1",
         action_is_local=False,
-        arguments={"book": "The Republic"},
+        action_arguments={"book": "The Republic"},
         result="The Republic",
         fact_id="1",
         fact_is_local=False,
@@ -53,7 +54,7 @@ BOOK_STEPS = [
         thought="I need to find another book.",
         action_id="0",
         action_is_local=True,
-        arguments={"book": "The Prince"},
+        action_arguments={"book": "The Prince"},
         result="The Prince",
         fact_id="0",
         fact_is_local=True,
