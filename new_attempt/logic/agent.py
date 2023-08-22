@@ -1,5 +1,6 @@
 from __future__ import annotations
 import threading
+from dataclasses import asdict
 from typing import Literal
 
 from new_attempt.logic.various import AgentArguments, Step, Fact, Action
@@ -9,10 +10,11 @@ from new_attempt.model.storages.generic_storage import VectorStorage
 class Agent(threading.Thread):
     @staticmethod
     def from_dict(agent_dict: dict[str, any], fact_storage: VectorStorage[Fact], action_storage: VectorStorage[Action]) -> Agent:
+        agent_arguments = AgentArguments(**agent_dict["arguments"])
 
         return Agent(
             agent_dict["agent_id"],
-            agent_dict["arguments"],
+            agent_arguments,
             fact_storage=fact_storage,
             action_storage=action_storage,
             max_steps=agent_dict["max_steps"],
@@ -44,7 +46,7 @@ class Agent(threading.Thread):
     def to_dict(self) -> dict[str, any]:
         return {
             "agent_id":     self.agent_id,
-            "arguments":    self.arguments,
+            "arguments":    asdict(self.arguments),
             "status":       self.status,
             "summary":      self.summary,
             "past_steps":   self.past_steps,

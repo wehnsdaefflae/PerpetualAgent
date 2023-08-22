@@ -14,8 +14,8 @@ class Model:
         chroma_db_path = "../resources/chroma.db"
         chroma_client = chromadb.PersistentClient(path=chroma_db_path)
 
-        fact_database = chroma_client.get_collection("facts")
-        action_database = chroma_client.get_collection("actions")
+        fact_database = chroma_client.get_or_create_collection("facts")
+        action_database = chroma_client.get_or_create_collection("actions")
 
         self.fact_storage = VectorStorage[Fact](fact_database, Fact)
         self.action_storage = VectorStorage[Action](action_database, Action)
@@ -26,7 +26,7 @@ class Model:
             "actions":   2,
         }
         redis_db_path = "../resources/redis.db"
-        redis_config = {"decode_responses": True, "dbserverconfig": {"appendonly": "yes"}}
+        redis_config = {"decode_responses": True, "serverconfig": {"appendonly": "yes"}}
         agent_database = redislite.StrictRedis(redis_db_path, db=0, **redis_config)
         self.agent_storage = AgentStorage(
             agent_database,
