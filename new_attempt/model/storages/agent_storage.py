@@ -32,7 +32,7 @@ class AgentStorage:
             cursor, keys = self.client.scan(cursor)
             all_keys.extend(keys)
 
-        agents = [self.get_agent(each_key) for each_key in all_keys]
+        agents = [self.get_agent(each_key) for each_key in all_keys if each_key.startswith("agent:")]
         return agents
 
     def get_agent(self, agent_id: str) -> Agent:
@@ -42,16 +42,16 @@ class AgentStorage:
         return agent
 
     def next_agent_id(self) -> str:
-        current_count = self.client.get("agent_count")
+        current_count = self.client.get("metadata:agent_count")
         if current_count is None:
-            return "0"
-        return str(int(current_count))
+            current_count = 0
+        return f"agent:{current_count}"
 
     def add_agent(self, agent: Agent) -> None:
         agent_dict = agent.to_dict()
         agent_json = json.dumps(agent_dict)
         self.client.set(agent.agent_id, agent_json)
-        self.client.incr("agent_count")
+        self.client.incr("metadata:agent_count")
         self.send_new_agent_to_view(agent)
 
     def remove_agent(self, agent_id: str) -> None:

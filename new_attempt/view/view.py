@@ -18,6 +18,7 @@ class View:
                  receive_facts:     Callable[[list[str] | None, str | None], list[Fact]],
                  receive_actions:   Callable[[list[str] | None, str | None], list[Action]],
                  pause_agent:       Callable[[Agent], None],
+                 start_agent:       Callable[[Agent], None],
                  delete_agent:      Callable[[Agent], None],
                  ) -> None:
 
@@ -27,6 +28,8 @@ class View:
         self.global_facts_table = None
         self.global_actions_table = None
         self.agents_table = None
+        self.toggle_all_button = None
+        self.pause_button = None
 
         self.selected_fact_ids = list[dict[str, any]]()
         self.selected_action_ids = list[dict[str, any]]()
@@ -44,6 +47,7 @@ class View:
         self.receive_facts = receive_facts
         self.receive_actions = receive_actions
         self.pause_agent = pause_agent
+        self.start_agent = start_agent
         self.delete_agent = delete_agent
 
         # start
@@ -121,14 +125,38 @@ class View:
             ]
             with nicegui.ui.scroll_area() as scroll_area:
                 scroll_area.classes("flex-1")
-                rows = [self._agent_to_row(each_agent) for each_agent in self.receive_agents(None, True)]
-                self.agents_table = nicegui.ui.table(columns=columns, rows=rows, row_key="agent_id", selection="single", on_select=self.agent_changed)
+                self.agents_table = nicegui.ui.table(columns=columns, rows=list(), row_key="agent_id", selection="single", on_select=self.agent_changed)
+                self._update_agents_table(initialize_paused=True)
 
             nicegui.ui.separator().classes("my-5")
             with nicegui.ui.row() as row:
                 row.classes("justify-around full-width flex-none")
                 nicegui.ui.button("New task", on_click=self._setup_agent_dialog)
-                nicegui.ui.button("Pause all")
+                self.toggle_all_button = nicegui.ui.button("Pause all", on_click=self.toggle_pause_all)
+
+    def _update_agents_table(self, initialize_paused: bool = False) -> None:
+        self.agents_table.rows.clear()
+        rows = [self._agent_to_row(each_agent) for each_agent in self.receive_agents(None, initialize_paused)]
+        self.agents_table.add_rows(*rows)
+
+    def toggle_pause_all(self) -> None:
+        agents = self.receive_agents([each_agent_row["agent_id"] for each_agent_row in self.agents_table.rows], False)
+        if self.toggle_all_button.text == "Pause all":
+            for each_agent in agents:
+                if each_agent.status == "working":
+                    self.pause_agent(each_agent)
+
+            self._update_agents_table(initialize_paused=False)
+            self.toggle_all_button.text = "Resume all"
+
+        elif self.toggle_all_button.text == "Resume all":
+            for each_agent in agents:
+                if each_agent.status == "paused":
+                    self.start_agent(each_agent)
+
+            self._update_agents_table(initialize_paused=False)
+            self.toggle_all_button.text = "Pause all"
+            self.agents_table.update()
 
     def fill_footer(self) -> None:
         with self.footer:
@@ -212,8 +240,19 @@ class View:
                     nicegui.ui.separator().classes("my-2")
 
             with nicegui.ui.row().classes('justify-around flex-none full-width'):
-                nicegui.ui.button("Pause")
-                nicegui.ui.button("Stop", on_click=lambda: self._confirm_deletion_dialog(agent))
+                self.pause_button = nicegui.ui.button("Resume" if agent.status == "paused" else "Pause", on_click=lambda: self.pause_from_details(agent))
+                if agent.status in ("finished", "pending"):
+                    self.pause_button.disable()
+                nicegui.ui.button("Delete", on_click=lambda: self._confirm_deletion_dialog(agent), color="negative")
+
+    def pause_from_details(self, agent: Agent) -> None:
+        if agent.status == "working":
+            self.pause_agent(agent)
+            self.pause_button.text = "Resume"
+
+        elif agent.status == "paused":
+            self.start_agent(agent)
+            self.pause_button.text = "Pause"
 
     async def _confirm_deletion_dialog(self, agent: Agent) -> None:
         with nicegui.ui.dialog() as dialog, nicegui.ui.card():
@@ -221,17 +260,13 @@ class View:
 
             with nicegui.ui.row().classes('justify-around flex-none full-width'):
                 nicegui.ui.button("Abort", on_click=dialog.close)
-                nicegui.ui.button("Pause", on_click=lambda: dialog.submit("pause"))
-                nicegui.ui.button("Delete", on_click=lambda: dialog.submit("delete"))
+                nicegui.ui.button("Delete", on_click=lambda: dialog.submit("delete"), color="negative")
 
         result = await dialog
         if result is None:
             return
 
-        if result == "pause":
-            self.pause_agent(agent)
-
-        elif result == "delete":
+        if result == "delete":
             self.delete_agent(agent)
             self.agents_table.selected.clear()
             for each_row in self.agents_table.rows:

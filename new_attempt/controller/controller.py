@@ -16,6 +16,7 @@ class Controller:
             self.receive_facts,
             self.receive_actions,
             self.pause_agent,
+            self.start_agent,
             self.delete_agent,
         )
 
@@ -27,6 +28,7 @@ class Controller:
 
     def start_agent(self, agent: Agent) -> None:
         agent.stopped = False
+        agent.start()
         agent.join()
         self.running_agents[agent.agent_id] = agent
 

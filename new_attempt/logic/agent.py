@@ -26,7 +26,7 @@ class Agent(threading.Thread):
     def __init__(self,
                  agent_id: str, arguments: AgentArguments,
                  fact_storage: VectorStorage[Fact], action_storage: VectorStorage[Action], max_steps: int = 20,
-                 _status: Literal["finished", "pending", "working", "paused"] = "pending", _summary: str = "", _past_steps: list[Step] | None = None) -> None:
+                 _status: Literal["finished", "pending", "working", "paused"] = "paused", _summary: str = "", _past_steps: list[Step] | None = None) -> None:
         super().__init__()
         self.agent_id = agent_id
         self.arguments = arguments
@@ -59,13 +59,13 @@ class Agent(threading.Thread):
         pass
 
     def _retrieve_action_from_repo(self, thought: str) -> str:
-        action = self.global_action_storage.retrieve_action(thought)
+        action = self.action_storage.retrieve_elements(thought, n=5)
         if action is None:
             action = ""
         return action
 
     def _retrieve_facts_from_memory(self, thought: str) -> list[str]:
-        return self.global_fact_storage.retrieve_facts(thought)
+        return self.fact_storage.retrieve_elements(thought, n=5)
 
     def _extract_parameters(self, thought: str, retrieved_facts: list[str], selected_action: str) -> dict[str, any]:
         pass
