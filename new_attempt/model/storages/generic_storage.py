@@ -6,7 +6,16 @@ from chromadb.utils import embedding_functions
 
 from new_attempt.logic.various import Fact, Action
 
-ELEMENT = TypeVar("ELEMENT", Fact, Action)
+
+class ContentElement:
+    def __init__(self, element_id: str, content: str, **kwargs: any) -> None:
+        # todo: use this
+        self.content = content
+        self.element_id = element_id
+        self.kwargs = kwargs
+
+
+ELEMENT = TypeVar("ELEMENT", bound=ContentElement)
 
 
 class VectorStorage(Generic[ELEMENT]):
