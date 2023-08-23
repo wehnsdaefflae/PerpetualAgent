@@ -224,16 +224,16 @@ class View:
                         action_row.classes("justify-between flex items-center")
                         label_thought = nicegui.ui.label(each_step.thought)
                         label_thought.classes("flex-1 m-3 p-3 bg-blue-300 rounded-lg")
-                        action_dialog = self.show_action(each_step.action_id, each_step.action_arguments)
+                        action_dialog = self.show_action(each_step.element_id, each_step.action_arguments)
                         action_button = nicegui.ui.button("show action", on_click=action_dialog.open)
                         action_button.classes("mx-5")
 
                     with nicegui.ui.row() as fact_row:
                         fact_row.classes("justify-between flex items-center")
-                        each_fact, = self.receive_facts([each_step.fact_id], agent_id)
-                        label_fact = nicegui.ui.label(f"{each_fact} (fact #{each_step.fact_id})")
+                        each_fact, = self.receive_facts([each_step.element_id], agent_id)
+                        label_fact = nicegui.ui.label(f"{each_fact} (fact #{each_step.element_id})")
                         label_fact.classes("flex-1 m-3 p-3 bg-green-300 rounded-lg")
-                        result_dialog = self.show_result(each_step.result)
+                        result_dialog = self.show_result(each_step.output)
                         result_button = nicegui.ui.button("show result", on_click=result_dialog.open)
                         result_button.classes("mx-5")
 
@@ -332,6 +332,7 @@ class View:
             nicegui.ui.separator()
 
             confirm_actions = nicegui.ui.checkbox("Requires confirmation", value=True)
+            action_attempts = nicegui.ui.number(value=3)
 
             with nicegui.ui.row().classes("justify-around full-width flex-none"):
                 button_ok = nicegui.ui.button("OK", color="primary", on_click=lambda: dialog.submit("done"))
@@ -349,6 +350,7 @@ class View:
             write_facts_local=write_facts_local.value,
             write_actions_local=write_actions_local.value,
             confirm_actions=confirm_actions.value,
+            action_attempts=action_attempts.value,
             llm_thought=llm_thought.value,
             llm_action=llm_action.value,
             llm_parameter=llm_parameter.value,
@@ -412,7 +414,7 @@ class View:
                         {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"}
                     ]
                     rows = [
-                        {"id": each_action.action_id, "action": each_action.action} for each_action in actions
+                        {"id": each_action.element_id, "action": each_action.action} for each_action in actions
                     ]
                     # details (remove?, persist?)
                     actions_table = nicegui.ui.table(columns=columns, rows=rows, row_key="action", selection="multiple")
@@ -427,7 +429,7 @@ class View:
                         {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"}
                     ]
                     rows = [
-                        {"id": each_fact.fact_id, "fact": each_fact.fact} for each_fact in facts
+                        {"id": each_fact.element_id, "fact": each_fact.fact} for each_fact in facts
                     ]
                     # details (remove?, persist?)
                     facts_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="multiple")
