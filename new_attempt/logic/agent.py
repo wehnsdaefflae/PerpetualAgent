@@ -47,6 +47,7 @@ class Agent(threading.Thread):
         return {
             "agent_id":     self.agent_id,
             "arguments":    asdict(self.arguments),
+            "max_steps":    self.max_steps,
             "status":       self.status,
             "summary":      self.summary,
             "past_steps":   self.past_steps,
@@ -95,18 +96,18 @@ class Agent(threading.Thread):
     def _save_summary(self, summary: str, is_fulfilled: bool) -> None:
         pass
 
-    def process(self) -> None:
+    def run(self) -> None:
         iteration = 0
 
-        while True:
+        while self.status == "working":
             thought = self._infer(self.arguments.task, self.summary)
             selected_action = self._retrieve_action_from_repo(thought)
             retrieved_facts = self._retrieve_facts_from_memory(thought)
             action_params = self._extract_parameters(thought, retrieved_facts, selected_action)
             result = self._execute_action(selected_action, action_params)
+
             new_fact, was_successful = self._generate_fact(thought, result)
             self.global_fact_storage.add_fact(new_fact)
-
             if was_successful:
                 self._increase_action_value(selected_action)
             else:
@@ -116,6 +117,3 @@ class Agent(threading.Thread):
             self._save_summary(self.summary, is_fulfilled)
 
             iteration += 1
-
-    def run(self) -> None:
-        self.process()

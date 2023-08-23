@@ -13,10 +13,12 @@ from new_attempt.logic.various import AgentArguments, Fact, Action
 
 class View:
     def __init__(self,
-                 send_new_agent:    Callable[[AgentArguments], None],
-                 receive_agents:    Callable[[list[str] | None], list[Agent]],
+                 send_new_agent:    Callable[[AgentArguments], Agent],
+                 receive_agents:    Callable[[list[str] | None, bool], list[Agent]],
                  receive_facts:     Callable[[list[str] | None, str | None], list[Fact]],
                  receive_actions:   Callable[[list[str] | None, str | None], list[Action]],
+                 pause_agent:       Callable[[Agent], None],
+                 delete_agent:      Callable[[Agent], None],
                  ) -> None:
 
         # content
@@ -41,6 +43,8 @@ class View:
         self.receive_agents = receive_agents
         self.receive_facts = receive_facts
         self.receive_actions = receive_actions
+        self.pause_agent = pause_agent
+        self.delete_agent = delete_agent
 
         # start
         self.run()
@@ -54,7 +58,7 @@ class View:
 
     def add_agents(self, agent_views: list[Agent]) -> None:
         new_rows = [self._agent_to_row(each_agent) for each_agent in agent_views]
-        self.agents_table.add_rows(new_rows)
+        self.agents_table.add_rows(*new_rows)
 
     def modify_page(self) -> None:
         nicegui.ui.query('#c0').classes("h-screen")
@@ -79,6 +83,12 @@ class View:
         self.right_drawer.classes("flex flex-col h-full")
 
         self.footer = nicegui.ui.footer()
+        # debug
+        with self.footer:
+            nicegui.ui.button("debug", on_click=self._debug_pause)
+
+    def _debug_pause(self) -> None:
+        print("breakpoint here")
 
     def run(self) -> None:
         self.modify_page()
@@ -106,18 +116,18 @@ class View:
         with self.left_drawer:
             columns = [
                 {"name": "agent_id", "label": "ID", "field": "agent_id", "required": True, "align": "left", "type": "text"},
-                {"name": "task", "label": "Task", "field": "task", "required": True, "align": "left", "type": "text"},
                 {"name": "status", "label": "Status", "field": "status", "required": True, "align": "left", "type": "text"},
+                {"name": "task", "label": "Task", "field": "task", "required": True, "align": "left", "type": "text"},
             ]
             with nicegui.ui.scroll_area() as scroll_area:
                 scroll_area.classes("flex-1")
-                rows = [self._agent_to_row(each_agent) for each_agent in self.receive_agents(None)]
-                self.agents_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="single", on_select=self.agent_changed)
+                rows = [self._agent_to_row(each_agent) for each_agent in self.receive_agents(None, True)]
+                self.agents_table = nicegui.ui.table(columns=columns, rows=rows, row_key="agent_id", selection="single", on_select=self.agent_changed)
 
             nicegui.ui.separator().classes("my-5")
             with nicegui.ui.row() as row:
                 row.classes("justify-around full-width flex-none")
-                nicegui.ui.button("New task", on_click=self.get_dialog)
+                nicegui.ui.button("New task", on_click=self._setup_agent_dialog)
                 nicegui.ui.button("Pause all")
 
     def fill_footer(self) -> None:
@@ -156,7 +166,7 @@ class View:
             return None
 
         selected, = self.agents_table.selected
-        agent_id = selected["id"]
+        agent_id = selected["agent_id"]
         return agent_id
 
     def fill_main(self) -> None:
@@ -169,9 +179,9 @@ class View:
                 message.classes("text-2xl flex-none")
                 return
 
-            agent, = self.receive_agents([agent_id])
+            agent, = self.receive_agents([agent_id], False)
 
-            label_task = nicegui.ui.label(agent.action_arguments.task)
+            label_task = nicegui.ui.label(agent.arguments.task)
             label_task.classes("text-2xl flex-none")
 
             label_progress = nicegui.ui.label(f"{agent.summary} [This is the progress report.]")
@@ -203,7 +213,33 @@ class View:
 
             with nicegui.ui.row().classes('justify-around flex-none full-width'):
                 nicegui.ui.button("Pause")
-                nicegui.ui.button("Cancel")
+                nicegui.ui.button("Stop", on_click=lambda: self._confirm_deletion_dialog(agent))
+
+    async def _confirm_deletion_dialog(self, agent: Agent) -> None:
+        with nicegui.ui.dialog() as dialog, nicegui.ui.card():
+            nicegui.ui.label(f"Do you really want to do this to agent {agent.agent_id}?")
+
+            with nicegui.ui.row().classes('justify-around flex-none full-width'):
+                nicegui.ui.button("Abort", on_click=dialog.close)
+                nicegui.ui.button("Pause", on_click=lambda: dialog.submit("pause"))
+                nicegui.ui.button("Delete", on_click=lambda: dialog.submit("delete"))
+
+        result = await dialog
+        if result is None:
+            return
+
+        if result == "pause":
+            self.pause_agent(agent)
+
+        elif result == "delete":
+            self.delete_agent(agent)
+            self.agents_table.selected.clear()
+            for each_row in self.agents_table.rows:
+                if each_row["agent_id"] == agent.agent_id:
+                    self.agents_table.remove_rows(each_row)
+                    break
+
+        self.agent_changed()
 
     def show_action(self, action_id: str, arguments: dict[str, any]) -> Dialog:
         action, = self.receive_actions([action_id], None)
@@ -222,7 +258,7 @@ class View:
         self.fill_main()
         self.fill_right_drawer()
 
-    async def get_dialog(self) -> None:
+    async def _setup_agent_dialog(self) -> None:
         llms = ["chatgpt-3.5-turbo", "gpt-4", "llama", "etc."]
 
         def enable_ok_button() -> None:
@@ -268,23 +304,26 @@ class View:
                 nicegui.ui.button("Cancel", color="secondary", on_click=dialog.close)
 
         result = await dialog
-        if result is not None:
-            arguments = AgentArguments(
-                task=text_area.value,
-                read_facts_global=read_facts_global.value,
-                read_actions_global=read_actions_global.value,
-                write_facts_local=write_facts_local.value,
-                write_actions_local=write_actions_local.value,
-                confirm_actions=confirm_actions.value,
-                llm_thought=llm_thought.value,
-                llm_action=llm_action.value,
-                llm_parameter=llm_parameter.value,
-                llm_result=llm_result.value,
-                llm_fact=llm_fact.value,
-                llm_summary=llm_summary.value,
-            )
+        if result is None:
+            return
 
-            self.send_new_agent(arguments)
+        arguments = AgentArguments(
+            task=text_area.value,
+            read_facts_global=read_facts_global.value,
+            read_actions_global=read_actions_global.value,
+            write_facts_local=write_facts_local.value,
+            write_actions_local=write_actions_local.value,
+            confirm_actions=confirm_actions.value,
+            llm_thought=llm_thought.value,
+            llm_action=llm_action.value,
+            llm_parameter=llm_parameter.value,
+            llm_result=llm_result.value,
+            llm_fact=llm_fact.value,
+            llm_summary=llm_summary.value,
+        )
+
+        agent = self.send_new_agent(arguments)
+        self.select_agent(agent.agent_id)
 
     def update_memory_buttons(self, buttons: list[Button], enable: bool) -> None:
         if enable:
@@ -294,6 +333,14 @@ class View:
 
             for each_button in buttons:
                 each_button.disable()
+
+    def select_agent(self, agent_id: str) -> None:
+        self.agents_table.selected.clear()
+        for each_row in self.agents_table.rows:
+            if each_row["agent_id"] == agent_id:
+                self.agents_table.selected.append(each_row)
+                self.agent_changed()
+                break
 
     def update_selected_actions(self, selected_action_rows: list[dict[str, any]], buttons: list[Button]) -> None:
         self.selected_action_ids.clear()

@@ -41,10 +41,17 @@ class AgentStorage:
         agent = Agent.from_dict(agent_dict, self.fact_storage, self.action_storage)
         return agent
 
+    def next_agent_id(self) -> str:
+        current_count = self.client.get("agent_count")
+        if current_count is None:
+            return "0"
+        return str(int(current_count))
+
     def add_agent(self, agent: Agent) -> None:
         agent_dict = agent.to_dict()
         agent_json = json.dumps(agent_dict)
         self.client.set(agent.agent_id, agent_json)
+        self.client.incr("agent_count")
         self.send_new_agent_to_view(agent)
 
     def remove_agent(self, agent_id: str) -> None:

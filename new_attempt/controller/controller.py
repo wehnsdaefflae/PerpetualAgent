@@ -15,11 +15,24 @@ class Controller:
             self.receive_agents,
             self.receive_facts,
             self.receive_actions,
+            self.pause_agent,
+            self.delete_agent,
         )
 
-        self.no_agents_created = 0
+        self.running_agents = dict()
 
-        self.agents = dict()
+    def pause_agent(self, agent: Agent) -> None:
+        agent.stopped = True
+        self.running_agents.pop(agent.agent_id, None)
+
+    def start_agent(self, agent: Agent) -> None:
+        agent.stopped = False
+        agent.join()
+        self.running_agents[agent.agent_id] = agent
+
+    def delete_agent(self, agent: Agent) -> None:
+        self.pause_agent(agent)
+        self.model.agent_storage.remove_agent(agent.agent_id)
 
     def receive_facts(self, fact_ids: list[str] | None = None, local_agent_id: str | None = None) -> list[Fact]:
         local_facts = self.model.fact_storage.get_elements(ids=fact_ids, local_agent_id=local_agent_id)
@@ -29,21 +42,23 @@ class Controller:
         local_actions = self.model.action_storage.get_elements(ids=fact_ids, local_agent_id=local_agent_id)
         return local_actions
 
-    def receive_agents(self, ids: list[str] | None = None) -> list[Agent]:
+    def receive_agents(self, ids: list[str] | None = None, paused: bool = True) -> list[Agent]:
         if ids is None:
-            return self.model.agent_storage.retrieve_agents()
-        return [self.model.agent_storage.get_agent(agent_id) for agent_id in ids]
+            agents = self.model.agent_storage.retrieve_agents()
+        else:
+            agents = [self.model.agent_storage.get_agent(agent_id) for agent_id in ids]
 
-    def send_new_agent(self, arguments: AgentArguments) -> None:
-        agent_id = str(self.no_agents_created)
-        self.no_agents_created += 1
+        if paused:
+            for each_agent in agents:
+                each_agent.status = "paused"
 
+        return agents
+
+    def send_new_agent(self, arguments: AgentArguments) -> Agent:
+        agent_id = self.model.agent_storage.next_agent_id()
         agent = Agent(agent_id, arguments, self.model.fact_storage, self.model.action_storage)
-
-        self.agents[agent_id] = agent
-        # todo: start agent thread
-
         self.model.agent_storage.add_agent(agent)
+        return agent
 
     def send_new_agent_to_view(self, agent: Agent) -> None:
         self.view.add_agents([agent])
