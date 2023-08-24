@@ -4,14 +4,13 @@ from typing import Callable
 import chromadb
 import redislite
 
-from new_attempt.logic.agent import Agent
-from new_attempt.logic.various import Fact, Action
+from new_attempt.controller.classes import Fact, Action
 from new_attempt.model.storages.agent_storage import AgentStorage
 from new_attempt.model.storages.generic_storage import VectorStorage
 
 
 class Model:
-    def __init__(self, send_new_agent_to_view: Callable[[Agent], None]) -> None:
+    def __init__(self) -> None:
         os.makedirs("../resources/databases", exist_ok=True)
 
         chroma_db_path = "../resources/databases/chroma.db"
@@ -34,6 +33,5 @@ class Model:
         self.agent_storage = AgentStorage(
             agent_database,
             self.fact_storage,
-            self.action_storage,
-            send_new_agent_to_view
+            self.action_storage
         )

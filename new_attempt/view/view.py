@@ -1,5 +1,6 @@
 # coding=utf-8
 import json
+from dataclasses import dataclass
 from typing import Callable
 
 import nicegui
@@ -7,20 +8,23 @@ from nicegui.elements.button import Button
 from nicegui.elements.dialog import Dialog
 from nicegui.elements.table import Table
 
+from new_attempt.controller.classes import AgentArguments, Fact, Action
 from new_attempt.logic.agent import Agent
-from new_attempt.logic.various import AgentArguments, Fact, Action
+
+
+@dataclass
+class ViewCallbacks:
+    send_new_agent_to_model: Callable[[AgentArguments], Agent]
+    receive_agents: Callable[[list[str] | None, bool], list[Agent]]
+    receive_facts: Callable[[list[str] | None, str | None], list[Fact]]
+    receive_actions: Callable[[list[str] | None, str | None], list[Action]]
+    pause_agent: Callable[[Agent], None]
+    start_agent: Callable[[Agent], None]
+    delete_agent: Callable[[Agent], None]
 
 
 class View:
-    def __init__(self,
-                 send_new_agent:    Callable[[AgentArguments], Agent],
-                 receive_agents:    Callable[[list[str] | None, bool], list[Agent]],
-                 receive_facts:     Callable[[list[str] | None, str | None], list[Fact]],
-                 receive_actions:   Callable[[list[str] | None, str | None], list[Action]],
-                 pause_agent:       Callable[[Agent], None],
-                 start_agent:       Callable[[Agent], None],
-                 delete_agent:      Callable[[Agent], None],
-                 ) -> None:
+    def __init__(self, view_callbacks: ViewCallbacks) -> None:
 
         # content
         self.local_facts_table = None
@@ -42,13 +46,7 @@ class View:
         self.footer = None
 
         # callbacks
-        self.send_new_agent = send_new_agent
-        self.receive_agents = receive_agents
-        self.receive_facts = receive_facts
-        self.receive_actions = receive_actions
-        self.pause_agent = pause_agent
-        self.start_agent = start_agent
-        self.delete_agent = delete_agent
+        self.view_callbacks = view_callbacks
 
         # start
         self.run()
@@ -136,15 +134,15 @@ class View:
 
     def _update_agents_table(self, initialize_paused: bool = False) -> None:
         self.agents_table.rows.clear()
-        rows = [self._agent_to_row(each_agent) for each_agent in self.receive_agents(None, initialize_paused)]
+        rows = [self._agent_to_row(each_agent) for each_agent in self.view_callbacks.receive_agents(None, initialize_paused)]
         self.agents_table.add_rows(*rows)
 
     def toggle_pause_all(self) -> None:
-        agents = self.receive_agents([each_agent_row["agent_id"] for each_agent_row in self.agents_table.rows], False)
+        agents = self.view_callbacks.receive_agents([each_agent_row["agent_id"] for each_agent_row in self.agents_table.rows], False)
         if self.toggle_all_button.text == "Pause all":
             for each_agent in agents:
                 if each_agent.status == "working":
-                    self.pause_agent(each_agent)
+                    self.view_callbacks.pause_agent(each_agent)
 
             self._update_agents_table(initialize_paused=False)
             self.toggle_all_button.text = "Resume all"
@@ -152,7 +150,7 @@ class View:
         elif self.toggle_all_button.text == "Resume all":
             for each_agent in agents:
                 if each_agent.status == "paused":
-                    self.start_agent(each_agent)
+                    self.view_callbacks.start_agent(each_agent)
 
             self._update_agents_table(initialize_paused=False)
             self.toggle_all_button.text = "Pause all"
@@ -207,7 +205,7 @@ class View:
                 message.classes("text-2xl flex-none")
                 return
 
-            agent, = self.receive_agents([agent_id], False)
+            agent, = self.view_callbacks.receive_agents([agent_id], False)
 
             label_task = nicegui.ui.label(agent.arguments.task)
             label_task.classes("text-2xl flex-none")
@@ -230,7 +228,7 @@ class View:
 
                     with nicegui.ui.row() as fact_row:
                         fact_row.classes("justify-between flex items-center")
-                        each_fact, = self.receive_facts([each_step.element_id], agent_id)
+                        each_fact, = self.view_callbacks.receive_facts([each_step.element_id], agent_id)
                         label_fact = nicegui.ui.label(f"{each_fact} (fact #{each_step.element_id})")
                         label_fact.classes("flex-1 m-3 p-3 bg-green-300 rounded-lg")
                         result_dialog = self.show_result(each_step.output)
@@ -247,11 +245,11 @@ class View:
 
     def pause_from_details(self, agent: Agent) -> None:
         if agent.status == "working":
-            self.pause_agent(agent)
+            self.view_callbacks.pause_agent(agent)
             self.pause_button.text = "Resume"
 
         elif agent.status == "paused":
-            self.start_agent(agent)
+            self.view_callbacks.start_agent(agent)
             self.pause_button.text = "Pause"
 
     async def _confirm_deletion_dialog(self, agent: Agent) -> None:
@@ -267,7 +265,7 @@ class View:
             return
 
         if result == "delete":
-            self.delete_agent(agent)
+            self.view_callbacks.delete_agent(agent)
             self.agents_table.selected.clear()
             for each_row in self.agents_table.rows:
                 if each_row["agent_id"] == agent.agent_id:
@@ -277,7 +275,7 @@ class View:
         self.agent_changed()
 
     def show_action(self, action_id: str, arguments: dict[str, any]) -> Dialog:
-        action, = self.receive_actions([action_id], None)
+        action, = self.view_callbacks.receive_actions([action_id], None)
         with nicegui.ui.dialog() as dialog, nicegui.ui.card():
             nicegui.ui.label(f"{action.action} (action #{action_id})")
             nicegui.ui.label(json.dumps(arguments, indent=4))
@@ -288,6 +286,12 @@ class View:
             nicegui.ui.label(result)
 
         return dialog
+
+    def update_details(self, agent: Agent) -> None:
+        selected_agent = self.get_agent_id()
+        if selected_agent != agent.agent_id:
+            return
+        self.agent_changed()
 
     def agent_changed(self) -> None:
         self.fill_main()
@@ -359,7 +363,8 @@ class View:
             llm_summary=llm_summary.value,
         )
 
-        agent = self.send_new_agent(arguments)
+        agent = self.view_callbacks.send_new_agent_to_model(arguments)
+        self._update_agents_table(initialize_paused=False)
         self.select_agent(agent.agent_id)
 
     def update_memory_buttons(self, buttons: list[Button], enable: bool) -> None:
@@ -393,11 +398,11 @@ class View:
 
     def memory_tables(self, agent_id: str, is_local: bool) -> tuple[Table, Table]:
         if is_local:
-            facts = self.receive_facts(None, agent_id)
-            actions = self.receive_actions(None, agent_id)
+            facts = self.view_callbacks.receive_facts(None, agent_id)
+            actions = self.view_callbacks.receive_actions(None, agent_id)
         else:
-            facts = self.receive_facts(None, None)
-            actions = self.receive_actions(None, None)
+            facts = self.view_callbacks.receive_facts(None, None)
+            actions = self.view_callbacks.receive_actions(None, None)
 
         with nicegui.ui.column() as column:
             column.classes("flex flex-col full-height full-width")
@@ -414,7 +419,7 @@ class View:
                         {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"}
                     ]
                     rows = [
-                        {"id": each_action.element_id, "action": each_action.action} for each_action in actions
+                        {"id": each_action.storage_id, "action": each_action.content} for each_action in actions
                     ]
                     # details (remove?, persist?)
                     actions_table = nicegui.ui.table(columns=columns, rows=rows, row_key="action", selection="multiple")
@@ -429,7 +434,7 @@ class View:
                         {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"}
                     ]
                     rows = [
-                        {"id": each_fact.element_id, "fact": each_fact.fact} for each_fact in facts
+                        {"id": each_fact.storage_id, "fact": each_fact.content} for each_fact in facts
                     ]
                     # details (remove?, persist?)
                     facts_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="multiple")
