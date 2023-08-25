@@ -10,29 +10,40 @@ class Fact(ContentElement):
     @staticmethod
     def from_dict(element_dict: dict[str, any]) -> Fact:
         content = element_dict["content"]
-        timestamp = element_dict["timestamp"]
-        fact = Fact(content, timestamp=timestamp)
+        kwargs = element_dict["kwargs"]
+        created = kwargs["timestamp"]
+        retrieved = kwargs["retrieved"]
+        fact = Fact(content, created=created, retrieved=retrieved)
         fact.storage_id = element_dict["storage_id"]
         return fact
 
-    def __init__(self, content: str, timestamp: float = time.time()) -> None:
-        super().__init__(content, timestamp=timestamp)
+    def __init__(self, content: str, created: float = time.time(), retrieved: float | None = None) -> None:
+        super().__init__(content, timestamp=created, retrieved=retrieved or created)
 
     @property
-    def timestamp(self) -> float:
-        return self._kwargs["timestamp"]
+    def created(self) -> float:
+        return self._kwargs["created"]
 
-    @timestamp.setter
-    def timestamp(self, timestamp: float) -> None:
-        self._kwargs["timestamp"] = timestamp
+    @created.setter
+    def created(self, created: float) -> None:
+        self._kwargs["created"] = created
+
+    @property
+    def retrieved(self) -> float:
+        return self._kwargs["retrieved"]
+
+    @retrieved.setter
+    def retrieved(self, retrieved: float) -> None:
+        self._kwargs["retrieved"] = retrieved
 
 
 class Action(ContentElement):
     @staticmethod
     def from_dict(element_dict: dict[str, any]) -> Action:
         content = element_dict["content"]
-        success = element_dict["success"]
-        failure = element_dict["failure"]
+        kwargs = element_dict["kwargs"]
+        success = kwargs["success"]
+        failure = kwargs["failure"]
         action = Action(content, success=success, failure=failure)
         action.storage_id = element_dict["storage_id"]
         return action

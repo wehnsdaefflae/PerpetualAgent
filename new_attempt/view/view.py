@@ -1,5 +1,6 @@
 # coding=utf-8
 import json
+from collections import namedtuple
 from dataclasses import dataclass
 from typing import Callable
 
@@ -253,57 +254,87 @@ class View:
                 nicegui.ui.button("Delete", on_click=lambda: self._confirm_deletion_dialog(agent), color="negative")
 
     def stream_of_consciousness(self) -> None:
+
+        one_step = (
+            ("thought", "Thought 1"),
+            ("relevant_facts", ("fact 1", "fact 2", "fact 3")),
+            ("action_attempt", {
+                "action_name": "action 1",
+                "action_arguments": json.dumps({"argument 1": "value 1", "argument 2": "value 2"}, indent=4),
+                "action_output": json.dumps({"output": "each_output"}, indent=4),
+                "resulting_fact": "resulting fact",
+                "is_successful": True
+             }),
+            ("action_attempt", {
+                "action_name": "action 2",
+                "action_arguments": json.dumps({"argument 1": "value 1", "argument 2": "value 2"}, indent=4),
+                "action_output": json.dumps({"output": "each_output"}, indent=4),
+                "resulting_fact": "resulting fact",
+                "is_successful": False
+            }),
+            ("is_successful", False),
+            ("summary", "Summary")
+        )
+
         # if any is none, stop parsing. set pending_message = "thinking about {key}", else set None
         steps = [
             {
                 "thought": "Thought 2",  # can be none
-                "content": {
-                    "relevant_facts": [  # can be none
-                        "fact 1",
-                        "fact 2",
-                        "fact 3",
-                    ],
-                    "action_attempts": [
-                        {
-                            "action_name": "action 1",              # can be none
-                            "action_arguments": json.dumps({    # can be none
-                                "argument 1": "value 1",
-                                "argument 2": "value 2",
-                            }, indent=4),
-                            "action_output": json.dumps({       # can be none
-                                "output": "each_output",
-                            }, indent=4),
-                            "resulting_fact": "resulting fact",     # can be none
-                            "is_successful": True,                  # can be none
-                        },
-                    ]
-                },
+                "relevant_facts": [  # can be none
+                    "fact 1",
+                    "fact 2",
+                    "fact 3",
+                ],
+                "action_attempts": [
+                    {
+                        "action_name": "action 1",              # can be none
+                        "action_arguments": json.dumps({    # can be none
+                            "argument 1": "value 1",
+                            "argument 2": "value 2",
+                        }, indent=4),
+                        "action_output": json.dumps({       # can be none
+                            "output": "each_output",
+                        }, indent=4),
+                        "resulting_fact": "resulting fact",     # can be none
+                        "is_successful": True,                  # can be none
+                    },
+                ],
                 "is_successful": True,                              # can be none
                 "summary": "Summary"                                # can be none
             },
             {
                 "thought": "Thought 1",
-                "content": {
-                    "relevant_facts": [
-                        "fact 1",
-                        "fact 2",
-                        "fact 3",
-                    ],
-                    "action_attempts": [
-                        {
-                            "action_name": "action 1",
-                            "action_arguments": json.dumps({
-                                "argument 1": "value 1",
-                                "argument 2": "value 2",
-                            }, indent=4),
-                            "action_output": json.dumps({
-                                "output": "each_output",
-                            }, indent=4),
-                            "resulting_fact": "resulting fact",
-                            "is_successful": False,
-                        },
-                    ]
-                },
+                "relevant_facts": [
+                    "fact 1",
+                    "fact 2",
+                    "fact 3",
+                ],
+                "action_attempts": [
+                    {
+                        "action_name": "action 1",
+                        "action_arguments": json.dumps({
+                            "argument 1": "value 1",
+                            "argument 2": "value 2",
+                        }, indent=4),
+                        "action_output": json.dumps({
+                            "output": "each_output",
+                        }, indent=4),
+                        "resulting_fact": "resulting fact",
+                        "is_successful": False,
+                    },
+                    {
+                        "action_name": "action 1",
+                        "action_arguments": json.dumps({
+                            "argument 1": "value 1",
+                            "argument 2": "value 2",
+                        }, indent=4),
+                        "action_output": json.dumps({
+                            "output": "each_output",
+                        }, indent=4),
+                        "resulting_fact": "resulting fact",
+                        "is_successful": False,
+                    },
+                ],
                 "is_successful": False,
                 "summary": "Summary"
             },
@@ -317,13 +348,12 @@ class View:
                         thought_expansion.classes("full-width bg-green-300 rounded-lg")
                     else:
                         thought_expansion.classes("full-width bg-red-300 rounded-lg")
-                    content = each_step["content"]
                     with nicegui.ui.expansion(text="relevant facts") as fact_expansion:
                         fact_expansion.classes("full-width pl-8 bg-blue-300")
-                        for each_fact in content["relevant_facts"]:
+                        for each_fact in each_step["relevant_facts"]:
                             each_label = nicegui.ui.label(each_fact)
                             each_label.classes("flex-1 m-3 p-3 rounded-lg")
-                    for each_action_attempt in content["action_attempts"]:
+                    for each_action_attempt in each_step["action_attempts"]:
                         with nicegui.ui.expansion(text=f"attempt #{each_action_attempt['action_name']}") as action_expansion:
                             if each_action_attempt["is_successful"]:
                                 action_expansion.classes("full-width pl-8 bg-green-300")
