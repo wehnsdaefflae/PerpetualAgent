@@ -7,6 +7,7 @@ from new_attempt.view.view import View, ViewCallbacks
 class Controller:
     def __init__(self) -> None:
         self.model = Model()
+        # connect agent here
 
         view_callbacks = ViewCallbacks(
             self.send_new_agent_to_model,
@@ -17,9 +18,12 @@ class Controller:
             self.start_agent,
             self.delete_agent,
         )
+
+        self.agents = set()
         self.view = View(view_callbacks)
 
-        self.running_agents = dict()
+        for each_agent in self.agents:
+            self.connect_agent(each_agent)
 
     def connect_agent(self, agent: Agent) -> None:
         agent.connect_model(self.model.agent_storage.add_agent)
@@ -27,13 +31,11 @@ class Controller:
 
     def pause_agent(self, agent: Agent) -> None:
         agent.stopped = True
-        self.running_agents.pop(agent.agent_id, None)
 
     def start_agent(self, agent: Agent) -> None:
         agent.stopped = False
         agent.start()
         agent.join()
-        self.running_agents[agent.agent_id] = agent
 
     def delete_agent(self, agent: Agent) -> None:
         self.pause_agent(agent)
@@ -46,7 +48,7 @@ class Controller:
             agents = [self.model.agent_storage.get_agent(agent_id) for agent_id in ids]
 
         for each_agent in agents:
-            self.connect_agent(each_agent)
+            self.agents.add(each_agent)
 
         if paused:
             for each_agent in agents:
@@ -56,10 +58,8 @@ class Controller:
 
     def send_new_agent_to_model(self, arguments: AgentArguments) -> Agent:
         agent_id = self.model.agent_storage.next_agent_id()
-        agent = Agent(
-            agent_id, arguments, self.model.fact_storage, self.model.action_storage
-        )
-        self.connect_agent(agent)
+        agent = Agent(agent_id, arguments, self.model.fact_storage, self.model.action_storage)
+        self.agents.add(agent)
         self.model.agent_storage.add_agent(agent)
         return agent
 

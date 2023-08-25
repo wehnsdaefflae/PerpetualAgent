@@ -129,8 +129,8 @@ class Agent(threading.Thread):
                  fact_storage: VectorStorage[Fact], action_storage: VectorStorage[Action],
                  _status: Literal["finished", "pending", "working", "paused"] = "paused", _summary: str = "", _history: StepHistory | None = None) -> None:
 
+        self.agent_id = agent_id  # must be here for hash required in Thread.__init__
         super().__init__()
-        self.agent_id = agent_id
         self.arguments = arguments
 
         self.status = _status
@@ -145,6 +145,9 @@ class Agent(threading.Thread):
         self.save_state = None
 
         self.iterations = 0
+
+    def __hash__(self) -> int:
+        return hash(self.agent_id)
 
     def to_dict(self) -> dict[str, any]:
         return {

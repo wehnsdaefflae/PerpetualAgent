@@ -214,34 +214,127 @@ class View:
             label_progress.classes("flex-none")
 
             with nicegui.ui.scroll_area() as scroll_area:
-                scroll_area.style('background-color: #f0f4fa')
+                # scroll_area.style('background-color: #f0f4fa')
                 scroll_area.classes("flex-1")
 
-                for each_step in agent.past_steps:
+                self.stream_of_consciousness()
+
+                """
+                for each_step in agent.history.past_steps:
+                    if each_step.action is None:
+                        continue
+
                     with nicegui.ui.row() as action_row:
                         action_row.classes("justify-between flex items-center")
                         label_thought = nicegui.ui.label(each_step.thought)
                         label_thought.classes("flex-1 m-3 p-3 bg-blue-300 rounded-lg")
-                        action_dialog = self.show_action(each_step.element_id, each_step.action_arguments)
+                        action_dialog = self.show_action(each_step.action.storage_id, each_step.action_arguments)
                         action_button = nicegui.ui.button("show action", on_click=action_dialog.open)
                         action_button.classes("mx-5")
 
+                    if each_step.fact is None:
+                        continue
+
                     with nicegui.ui.row() as fact_row:
                         fact_row.classes("justify-between flex items-center")
-                        each_fact, = self.view_callbacks.receive_facts([each_step.element_id], agent_id)
+                        each_fact, = self.view_callbacks.receive_facts([each_step.fact.storage_id], agent_id)
                         label_fact = nicegui.ui.label(f"{each_fact} (fact #{each_step.element_id})")
                         label_fact.classes("flex-1 m-3 p-3 bg-green-300 rounded-lg")
                         result_dialog = self.show_result(each_step.output)
                         result_button = nicegui.ui.button("show result", on_click=result_dialog.open)
                         result_button.classes("mx-5")
-
                     nicegui.ui.separator().classes("my-2")
+                    """
 
             with nicegui.ui.row().classes('justify-around flex-none full-width'):
                 self.pause_button = nicegui.ui.button("Resume" if agent.status == "paused" else "Pause", on_click=lambda: self.pause_from_details(agent))
                 if agent.status in ("finished", "pending"):
                     self.pause_button.disable()
                 nicegui.ui.button("Delete", on_click=lambda: self._confirm_deletion_dialog(agent), color="negative")
+
+    def stream_of_consciousness(self) -> None:
+        # if any is none, stop parsing. set pending_message = "thinking about {key}", else set None
+        steps = [
+            {
+                "thought": "Thought 2",  # can be none
+                "content": {
+                    "relevant_facts": [  # can be none
+                        "fact 1",
+                        "fact 2",
+                        "fact 3",
+                    ],
+                    "action_attempts": [
+                        {
+                            "action_name": "action 1",              # can be none
+                            "action_arguments": json.dumps({    # can be none
+                                "argument 1": "value 1",
+                                "argument 2": "value 2",
+                            }, indent=4),
+                            "action_output": json.dumps({       # can be none
+                                "output": "each_output",
+                            }, indent=4),
+                            "resulting_fact": "resulting fact",     # can be none
+                            "is_successful": True,                  # can be none
+                        },
+                    ]
+                },
+                "is_successful": True,                              # can be none
+                "summary": "Summary"                                # can be none
+            },
+            {
+                "thought": "Thought 1",
+                "content": {
+                    "relevant_facts": [
+                        "fact 1",
+                        "fact 2",
+                        "fact 3",
+                    ],
+                    "action_attempts": [
+                        {
+                            "action_name": "action 1",
+                            "action_arguments": json.dumps({
+                                "argument 1": "value 1",
+                                "argument 2": "value 2",
+                            }, indent=4),
+                            "action_output": json.dumps({
+                                "output": "each_output",
+                            }, indent=4),
+                            "resulting_fact": "resulting fact",
+                            "is_successful": False,
+                        },
+                    ]
+                },
+                "is_successful": False,
+                "summary": "Summary"
+            },
+        ]
+
+        with nicegui.ui.column() as main_column:
+            main_column.classes("flex flex-col full-width")
+            for each_step in steps:
+                with nicegui.ui.expansion(text=each_step["thought"]) as thought_expansion:
+                    if each_step["is_successful"]:
+                        thought_expansion.classes("full-width bg-green-300 rounded-lg")
+                    else:
+                        thought_expansion.classes("full-width bg-red-300 rounded-lg")
+                    content = each_step["content"]
+                    with nicegui.ui.expansion(text="relevant facts") as fact_expansion:
+                        fact_expansion.classes("full-width pl-8 bg-blue-300")
+                        for each_fact in content["relevant_facts"]:
+                            each_label = nicegui.ui.label(each_fact)
+                            each_label.classes("flex-1 m-3 p-3 rounded-lg")
+                    for each_action_attempt in content["action_attempts"]:
+                        with nicegui.ui.expansion(text=f"attempt #{each_action_attempt['action_name']}") as action_expansion:
+                            if each_action_attempt["is_successful"]:
+                                action_expansion.classes("full-width pl-8 bg-green-300")
+                            else:
+                                action_expansion.classes("full-width pl-8 bg-red-300")
+                            nicegui.ui.markdown(f"```json\n{each_action_attempt['action_arguments']}\n```")
+                            nicegui.ui.markdown(f"```json\n{each_action_attempt['action_output']}\n```")
+                            each_label = nicegui.ui.label(each_action_attempt["resulting_fact"])
+                            each_label.classes("flex-1 m-3 p-3 bg-blue-200 rounded-lg")
+                    each_label = nicegui.ui.label(each_step["summary"])
+                    each_label.classes("flex-1 m-3 p-3 bg-white rounded-lg")
 
     def pause_from_details(self, agent: Agent) -> None:
         if agent.status == "working":
