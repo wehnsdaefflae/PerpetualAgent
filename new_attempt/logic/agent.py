@@ -149,6 +149,23 @@ class Agent(threading.Thread):
     def __hash__(self) -> int:
         return hash(self.agent_id)
 
+    """    
+    def view_decorator(self, part_of_view: str) -> Callable[[DECORATED], DECORATED]:
+        def decorator(func: DECORATED) -> DECORATED:
+            def wrapper(*args: tuple[any, ...], **kwargs: dict) -> any:
+                self.view_callback_before(part_of_view, "About to execute method: " + func.__name__)
+
+                result = func(*args, **kwargs)
+
+                self.view_callback_after(part_of_view, "Method {} returned: {}".format(func.__name__, result))
+
+                return result
+
+            return wrapper
+
+        return decorator
+    """
+
     def to_dict(self) -> dict[str, any]:
         return {
             "agent_id": self.agent_id,
