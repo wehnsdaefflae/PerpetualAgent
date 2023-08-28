@@ -3,7 +3,7 @@ import os
 import chromadb
 import redislite
 
-from new_attempt.controller.classes import Fact, Action
+from new_attempt.logic.classes import Fact, Action
 from new_attempt.model.storages.agent_storage import AgentStorage
 from new_attempt.model.storages.generic_storage import VectorStorage
 

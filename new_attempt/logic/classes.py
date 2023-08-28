@@ -1,12 +1,44 @@
 from __future__ import annotations
 
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import TypeVar, Type
 
 from new_attempt.model.storages.generic_storage import ContentElement
 
 
-class Fact(ContentElement):
+D = TypeVar("D", bound="Dictable")
+
+
+class Dictable(ABC):
+    @staticmethod
+    @abstractmethod
+    def from_dict(element_dict: dict[str, any]) -> D:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def to_dict(self) -> dict[str, any]:
+        raise NotImplementedError()
+
+
+class Thought(str, Dictable):
+    @staticmethod
+    def from_dict(element_dict: dict[str, any]) -> Thought:
+        content = element_dict["content"]
+        thought = Thought(content)
+        return thought
+
+    def __new__(cls: Type[Thought], value: str, *args: any, **kwargs: any) -> Thought:
+        return super().__new__(cls, value)
+
+    def to_dict(self) -> dict[str, any]:
+        return {
+            "thought": str(self)
+        }
+
+
+class Fact(ContentElement, Dictable):
     @staticmethod
     def from_dict(element_dict: dict[str, any]) -> Fact:
         content = element_dict["content"]
@@ -37,7 +69,7 @@ class Fact(ContentElement):
         self._kwargs["retrieved"] = retrieved
 
 
-class Action(ContentElement):
+class Action(ContentElement, Dictable):
     @staticmethod
     def from_dict(element_dict: dict[str, any]) -> Action:
         content = element_dict["content"]
@@ -68,6 +100,69 @@ class Action(ContentElement):
         self._kwargs["failure"] = failure
 
 
+class ActionArguments(dict[str, any], Dictable):
+    @staticmethod
+    def from_dict(element_dict: dict[str, any]) -> ActionArguments:
+        return ActionArguments(element_dict)
+
+    def to_dict(self) -> dict[str, any]:
+        return self
+
+
+class ActionOutput(str, Dictable):
+    @staticmethod
+    def from_dict(element_dict: dict[str, any]) -> ActionOutput:
+        content = element_dict["action_output"]
+        return ActionOutput(content)
+
+    def to_dict(self) -> dict[str, any]:
+        return {
+            "action_output": str(self)
+        }
+
+
+class ActionWasSuccessful(Dictable):
+    @staticmethod
+    def from_dict(element_dict: dict[str, any]) -> D:
+        value = element_dict["action_was_successful"]
+        return ActionWasSuccessful(value)
+
+    def to_dict(self) -> dict[str, any]:
+        return {
+            "action_was_successful": self.value
+        }
+
+    def __init__(self, value: bool) -> None:
+        self.value = value
+
+
+class Summary(str, Dictable):
+    @staticmethod
+    def from_dict(element_dict: dict[str, any]) -> Summary:
+        content = element_dict["summary"]
+        return Summary(content)
+
+    def to_dict(self) -> dict[str, any]:
+        return {
+            "summary": str(self)
+        }
+
+
+class IsFulfilled(Dictable):
+    @staticmethod
+    def from_dict(element_dict: dict[str, any]) -> D:
+        value = element_dict["is_fulfilled"]
+        return IsFulfilled(value)
+
+    def to_dict(self) -> dict[str, any]:
+        return {
+            "is_fulfilled": self.value
+        }
+
+    def __init__(self, value: bool) -> None:
+        self.value = value
+
+
 @dataclass
 class AgentArguments:
     task:                   str
@@ -88,4 +183,3 @@ class AgentArguments:
     llm_summary:            str
 
 
-ActionArguments = dict[str, any]

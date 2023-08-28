@@ -4,7 +4,7 @@ import json
 
 import redislite
 
-from new_attempt.controller.classes import Fact, Action
+from new_attempt.logic.classes import Fact, Action
 from new_attempt.logic.agent import Agent
 from new_attempt.model.storages.generic_storage import VectorStorage
 

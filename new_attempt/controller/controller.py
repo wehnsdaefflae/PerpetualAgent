@@ -1,15 +1,23 @@
-from new_attempt.controller.classes import AgentArguments
-from new_attempt.logic.agent import Agent
+from new_attempt.logic.classes import AgentArguments
+from new_attempt.logic.agent import Agent, ModelCallbacks as AgentCallsModel, ViewCallbacks as AgentCallsView
 from new_attempt.model.model import Model
-from new_attempt.view.view import View, ViewCallbacks
+from new_attempt.view.view import View, ViewCallbacks as ViewCallsRest
 
 
 class Controller:
     def __init__(self) -> None:
         self.model = Model()
-        # connect agent here
 
-        view_callbacks = ViewCallbacks(
+        self.agent_model_callbacks = AgentCallsModel(
+            self.model.action_storage.update_elements,
+            self.model.fact_storage.update_elements,
+            self.model.fact_storage.get_elements,
+            self.model.action_storage.get_elements,
+            self.model.fact_storage.store_contents,
+            self.model.action_storage.store_contents
+        )
+
+        view_callbacks = ViewCallsRest(
             self.send_new_agent_to_model,
             self.receive_agents,
             self.model.fact_storage.get_elements,
@@ -19,15 +27,24 @@ class Controller:
             self.delete_agent,
         )
 
-        self.agents = set()
         self.view = View(view_callbacks)
 
-        for each_agent in self.agents:
-            self.connect_agent(each_agent)
+        self.agent_view_callbacks = AgentCallsView(
+            self.view.update_thought,
+            self.view.update_relevant_facts,
+            self.view.update_action_attempt,
+            self.view.update_action,
+            self.view.update_action_arguments,
+            self.view.update_action_output,
+            self.view.update_fact,
+            self.view.update_action_is_successful,
+            self.view.update_summary,
+            self.view.update_is_fulfilled,
 
-    def connect_agent(self, agent: Agent) -> None:
-        agent.connect_model(self.model.agent_storage.add_agent)
-        agent.connect_view(self.view.update_details)
+            self.view.fill_main
+        )
+
+        self.agents = set()
 
     def pause_agent(self, agent: Agent) -> None:
         agent.stopped = True
@@ -49,6 +66,8 @@ class Controller:
 
         for each_agent in agents:
             self.agents.add(each_agent)
+            each_agent.connect_model_callbacks(self.agent_model_callbacks)
+            each_agent.connect_view_callbacks(self.agent_view_callbacks)
 
         if paused:
             for each_agent in agents:
@@ -59,6 +78,9 @@ class Controller:
     def send_new_agent_to_model(self, arguments: AgentArguments) -> Agent:
         agent_id = self.model.agent_storage.next_agent_id()
         agent = Agent(agent_id, arguments, self.model.fact_storage, self.model.action_storage)
+        agent.connect_model_callbacks(self.agent_model_callbacks)
+        agent.connect_view_callbacks(self.agent_view_callbacks)
+
         self.agents.add(agent)
         self.model.agent_storage.add_agent(agent)
         return agent

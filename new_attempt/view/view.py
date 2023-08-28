@@ -1,6 +1,5 @@
 # coding=utf-8
 import json
-from collections import namedtuple
 from dataclasses import dataclass
 from typing import Callable
 
@@ -9,7 +8,7 @@ from nicegui.elements.button import Button
 from nicegui.elements.dialog import Dialog
 from nicegui.elements.table import Table
 
-from new_attempt.controller.classes import AgentArguments, Fact, Action
+from new_attempt.logic.classes import AgentArguments, Fact, Action, Thought, ActionArguments, ActionOutput, Summary, ActionWasSuccessful, IsFulfilled
 from new_attempt.logic.agent import Agent
 
 
@@ -237,36 +236,41 @@ class View:
         with stream:
             self.stream_of_consciousness()
 
-    def update_thought(self, thought: str) -> None:
+    def update_thought(self, thought: Thought) -> None:
         pass
 
     def update_relevant_facts(self, relevant_facts: list[Fact]) -> None:
         pass
 
-    def update_action_name(self, action_name: str) -> None:
+    def update_action_attempt(self) -> None:
+        pass
+
+    def update_action(self, action: Action) -> None:
         # create new action attempt
         pass
 
-    def update_action_arguments(self, action_arguments: dict[str, any]) -> None:
+    def update_action_arguments(self, action_arguments: ActionArguments) -> None:
         pass
 
-    def update_action_output(self, action_output: dict[str, any]) -> None:
+    def update_action_output(self, action_output: ActionOutput) -> None:
         pass
 
-    def update_action_fact(self, resulting_fact: Fact) -> None:
+    def update_fact(self, resulting_fact: Fact) -> None:
         pass
 
-    def update_action_is_successful(self, is_successful: bool) -> None:
+    def update_action_is_successful(self, is_successful: ActionWasSuccessful) -> None:
         pass
 
-    def update_step_is_successful(self, is_successful: bool) -> None:
+    def update_summary(self, summary: Summary) -> None:
         pass
 
-    def update_summary(self, summary: str) -> None:
+    def update_is_fulfilled(self, is_fulfilled: IsFulfilled) -> None:
         pass
-
 
     def stream_of_consciousness(self) -> None:
+
+        # agent, = self.view_callbacks.receive_agents([agent_id], False)
+
         # if any is none, stop parsing. set pending_message = "thinking about {key}", else set None
         steps = [
             {

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import nicegui
 
-from new_attempt.controller.classes import Fact
+from new_attempt.logic.classes import Fact
 
 
 @dataclass
