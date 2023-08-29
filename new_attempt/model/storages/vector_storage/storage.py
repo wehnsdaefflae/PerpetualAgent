@@ -1,41 +1,14 @@
-from abc import ABC, abstractmethod
 from functools import lru_cache
-from typing import TypeVar, Generic, Type
+from typing import Generic, Type
 
 from chromadb.api.models.Collection import Collection
 from chromadb.utils import embedding_functions
 
-
-class __ContentElementForwardRef(ABC):
-    pass
-
-
-ELEMENT = TypeVar("ELEMENT", bound=__ContentElementForwardRef)
+from new_attempt.model.storages.vector_storage.callbacks import Callbacks
+from new_attempt.model.storages.vector_storage.element import CONTENT_ELEMENT
 
 
-class ContentElement(__ContentElementForwardRef):
-    @staticmethod
-    @abstractmethod
-    def from_dict(element_dict: dict[str, any]) -> ELEMENT:
-        raise NotImplementedError()
-
-    def __init__(self, content: str, **kwargs: any) -> None:
-        self.content = content
-        self._kwargs = kwargs
-        self.storage_id = None
-
-    def __hash__(self) -> int:
-        return hash(self.storage_id)
-
-    def to_dict(self) -> dict[str, any]:
-        return {
-            "content": self.content,
-            "kwargs": self._kwargs,
-            "storage_id": self.storage_id,
-        }
-
-
-class VectorStorage(Generic[ELEMENT]):
+class VectorStorage(Generic[CONTENT_ELEMENT]):
     @staticmethod
     def _compose_id(element_id: str, local_agent_id: str | None = None) -> str:
         return f"global:{element_id}" if local_agent_id is None else f"local_{local_agent_id}:{element_id}"
@@ -52,9 +25,10 @@ class VectorStorage(Generic[ELEMENT]):
             for each_vector in vectors
         ]
 
-    def __init__(self, collection: Collection, clazz: Type[ELEMENT]) -> None:
+    def __init__(self, collection: Collection, clazz: Type[CONTENT_ELEMENT]) -> None:
         self.collection = collection
         self.clazz = clazz
+        self.callbacks = None
 
     def __len__(self) -> int:
         return self.collection.count()
@@ -68,7 +42,10 @@ class VectorStorage(Generic[ELEMENT]):
             self._increment_storage_id()
         return storage_id
 
-    def store_contents(self, contents: list[str], local_agent_id: str | None = None) -> list[ELEMENT]:
+    def connect_callbacks(self, callbacks: Callbacks) -> None:
+        self.callbacks = callbacks
+
+    def store_contents(self, contents: list[str], local_agent_id: str | None = None) -> list[CONTENT_ELEMENT]:
         ids = list()
         metadatas = list()
         documents = list()
@@ -83,7 +60,7 @@ class VectorStorage(Generic[ELEMENT]):
             each_element.storage_id = storage_id
 
             ids.append(storage_id)
-            metadatas.append(each_element._kwargs)
+            metadatas.append(each_element.kwargs)
             documents.append(each_content)
 
         embeddings = VectorStorage._embed(documents)
@@ -94,12 +71,14 @@ class VectorStorage(Generic[ELEMENT]):
             documents=documents,
             embeddings=embeddings
         )
-
+        self.callbacks.upsert_elements(elements)
         return elements
 
-    def update_elements(self, elements: list[ELEMENT]) -> None:
+    def update_elements(self, elements: list[CONTENT_ELEMENT]) -> None:
         ids = [each_element.storage_id for each_element in elements]
         results = self.collection.get(ids=ids, include=["embeddings", "metadatas", "documents"])
+        # not UPSERT, only UPDATE: raises exception if elements are not found
+
         old_embeddings = dict(zip(results["ids"], results["embeddings"]))
         old_metadatas = dict(zip(results["ids"], results["metadatas"]))
         old_documents = dict(zip(results["ids"], results["documents"]))
@@ -138,11 +117,14 @@ class VectorStorage(Generic[ELEMENT]):
             metadatas=new_metadatas,
             documents=new_documents
         )
+        self.callbacks.upsert_elements(elements)
 
     def remove_elements(self, ids: list[str]) -> None:
+        elements = self.get_elements(ids=ids)
         self.collection.delete(ids=ids)
+        self.callbacks.remove_elements(elements)
 
-    def get_elements(self, ids: list[str] | None = None, local_agent_id: str | None = None) -> list[ELEMENT]:
+    def get_elements(self, ids: list[str] | None = None, local_agent_id: str | None = None) -> list[CONTENT_ELEMENT]:
         result = self.collection.get(ids=ids)
 
         documents = result["documents"]
@@ -160,8 +142,8 @@ class VectorStorage(Generic[ELEMENT]):
 
         return elements
 
-    def retrieve_elements(self, thought: str, n: int = 5) -> list[ELEMENT]:
-        embedding, = self._embed([thought])
+    def get_similar_elements(self, content: str, n: int = 5) -> list[CONTENT_ELEMENT]:
+        embedding, = self._embed([content])
         result = self.collection.query(embedding, n_results=n)
         metadatas = result["metadatas"][0]
         documents = result["documents"][0]

@@ -3,9 +3,9 @@ import os
 import chromadb
 import redislite
 
-from new_attempt.logic.classes import Fact, Action
-from new_attempt.model.storages.agent_storage import AgentStorage
-from new_attempt.model.storages.generic_storage import VectorStorage
+from new_attempt.model.agent.step_elements import Fact, Action
+from new_attempt.model.storages.agent_storage.agent_storage import AgentStorage
+from new_attempt.model.storages.vector_storage.storage import VectorStorage
 
 
 class Model:

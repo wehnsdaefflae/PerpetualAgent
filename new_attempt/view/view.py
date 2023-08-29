@@ -1,6 +1,5 @@
 # coding=utf-8
 import json
-from dataclasses import dataclass
 from typing import Callable
 
 import nicegui
@@ -8,19 +7,10 @@ from nicegui.elements.button import Button
 from nicegui.elements.dialog import Dialog
 from nicegui.elements.table import Table
 
-from new_attempt.logic.classes import AgentArguments, Fact, Action, Thought, ActionArguments, ActionOutput, Summary, ActionWasSuccessful, IsFulfilled
-from new_attempt.logic.agent import Agent
-
-
-@dataclass
-class ViewCallbacks:
-    send_new_agent_to_model: Callable[[AgentArguments], Agent]
-    receive_agents: Callable[[list[str] | None, bool], list[Agent]]
-    receive_facts: Callable[[list[str] | None, str | None], list[Fact]]
-    receive_actions: Callable[[list[str] | None, str | None], list[Action]]
-    pause_agent: Callable[[Agent], None]
-    start_agent: Callable[[Agent], None]
-    delete_agent: Callable[[Agent], None]
+from new_attempt.model.agent.agent import Agent, AgentArguments
+from new_attempt.model.agent.step_elements import Fact, Action, IsFulfilled, ActionOutput, ActionArguments, ActionWasSuccessful, Summary, Thought
+from new_attempt.model.storages.vector_storage.element import ContentElement, CONTENT_ELEMENT
+from new_attempt.view.callbacks import ViewCallbacks
 
 
 class View:
@@ -137,11 +127,11 @@ class View:
 
     def _update_agents_table(self, initialize_paused: bool = False) -> None:
         self.agents_table.rows.clear()
-        rows = [self._agent_to_row(each_agent) for each_agent in self.view_callbacks.receive_agents(None, initialize_paused)]
+        rows = [self._agent_to_row(each_agent) for each_agent in self.view_callbacks.get_agents()]
         self.agents_table.add_rows(*rows)
 
     def toggle_pause_all(self) -> None:
-        agents = self.view_callbacks.receive_agents([each_agent_row["agent_id"] for each_agent_row in self.agents_table.rows], False)
+        agents = self.view_callbacks.get_agents(agent_ids=[each_agent_row["agent_id"] for each_agent_row in self.agents_table.rows])
         if self.toggle_all_button.text == "Pause all":
             for each_agent in agents:
                 if each_agent.status == "working":
@@ -168,7 +158,7 @@ class View:
 
     def fill_right_drawer(self) -> None:
         self.right_drawer.clear()
-        agent_id = self.get_agent_id()
+        agent_id = self.get_selected_agent_id()
 
         with self.right_drawer:
             with nicegui.ui.tabs(on_change=self.switched_memory_tab) as tabs:
@@ -190,7 +180,7 @@ class View:
                 with nicegui.ui.tab_panel(global_memory):
                     self.global_actions_table, self.global_facts_table = self.memory_tables(agent_id, False)
 
-    def get_agent_id(self) -> str | None:
+    def get_selected_agent_id(self) -> str | None:
         if len(self.agents_table.selected) < 1:
             return None
 
@@ -202,14 +192,14 @@ class View:
         self.main_section.clear()
 
         stream = None
-        agent_id = self.get_agent_id()
+        agent_id = self.get_selected_agent_id()
         with self.main_section:
             if agent_id is None:
                 message = nicegui.ui.label("no agent selected")
                 message.classes("text-2xl flex-none")
                 return
 
-            agent, = self.view_callbacks.receive_agents([agent_id], False)
+            agent, = self.view_callbacks.get_agents(agent_ids=[agent_id])
 
             label_task = nicegui.ui.label(agent.arguments.task)
             label_task.classes("text-2xl flex-none")
@@ -435,7 +425,7 @@ class View:
         self.agent_changed()
 
     def show_action(self, action_id: str, arguments: dict[str, any]) -> Dialog:
-        action, = self.view_callbacks.receive_actions([action_id], None)
+        action, = self.view_callbacks.get_actions(action_ids=[action_id])
         with nicegui.ui.dialog() as dialog, nicegui.ui.card():
             nicegui.ui.label(f"{action.action} (action #{action_id})")
             nicegui.ui.label(json.dumps(arguments, indent=4))
@@ -448,7 +438,7 @@ class View:
         return dialog
 
     def update_details(self, agent: Agent) -> None:
-        selected_agent = self.get_agent_id()
+        selected_agent = self.get_selected_agent_id()
         if selected_agent != agent.agent_id:
             return
         self.agent_changed()
@@ -523,7 +513,7 @@ class View:
             llm_summary=llm_summary.value,
         )
 
-        agent = self.view_callbacks.send_new_agent_to_model(arguments)
+        agent = self.view_callbacks.create_agent(arguments)
         self._update_agents_table(initialize_paused=False)
         self.select_agent(agent.agent_id)
 
@@ -556,13 +546,131 @@ class View:
             self.selected_fact_ids.append(each_fact["id"])
         self.update_memory_buttons([each_button for each_button in buttons if each_button is not None], 0 < len(selected_fact_rows))
 
+    def _action_to_row(self, action: Action) -> dict[str, str]:
+        return {"id": action.storage_id, "action": action.content}
+
+    def _fact_to_row(self, fact: Fact) -> dict[str, str]:
+        return {"id": fact.storage_id, "fact": fact.content}
+
+    def _delete_content_element(self,
+                                content_element: ContentElement,
+                                memory_table: nicegui.ui.table) -> None:
+        for each_row in memory_table.rows:
+            if each_row["id"] == content_element.storage_id:
+                to_remove = each_row
+                break
+        else:
+            raise ValueError(f"Could not find row with id {content_element.storage_id}")
+
+        memory_table.remove_rows(to_remove)
+
+    def delete_facts(self, facts: list[Fact]) -> None:
+        for each_fact in facts:
+            if each_fact.storage_id.startswith("global:"):
+                memory_table = self.global_facts_table
+
+            elif each_fact.storage_id.startswith("local_"):
+                selected_agent_id = self.get_selected_agent_id()
+                if not each_fact.storage_id.startswith(f"local_{selected_agent_id}"):
+                    continue
+                memory_table = self.local_facts_table
+
+            else:
+                raise ValueError(f"Unknown storage id: {each_fact.storage_id}")
+
+            self._delete_content_element(each_fact, memory_table)
+
+    def delete_actions(self, actions: list[Action]) -> None:
+        for each_action in actions:
+            if each_action.storage_id.startswith("global:"):
+                memory_table = self.global_actions_table
+
+            elif each_action.storage_id.startswith("local_"):
+                selected_agent_id = self.get_selected_agent_id()
+                if not each_action.storage_id.startswith(f"local_{selected_agent_id}"):
+                    continue
+                memory_table = self.local_actions_table
+
+            else:
+                raise ValueError(f"Unknown storage id: {each_action.storage_id}")
+
+            self._delete_content_element(each_action, memory_table)
+
+    def _upsert_content_element(self,
+                                content_element: ContentElement,
+                                element_to_row: Callable[[CONTENT_ELEMENT], dict[str, str]],
+                                memory_table: nicegui.ui.table) -> None:
+
+        new_row = element_to_row(content_element)
+        for each_row in memory_table.rows:
+            if each_row["id"] == content_element.storage_id:
+                each_row.update(new_row)
+                break
+        else:
+            memory_table.add_rows(new_row)
+
+    def upsert_facts(self, facts: list[Fact]) -> None:
+        for each_fact in facts:
+            if each_fact.storage_id.startswith("global:"):
+                memory_table = self.global_facts_table
+
+            elif each_fact.storage_id.startswith("local_"):
+                selected_agent_id = self.get_selected_agent_id()
+                if not each_fact.storage_id.startswith(f"local_{selected_agent_id}"):
+                    continue
+                memory_table = self.local_facts_table
+
+            else:
+                raise ValueError(f"Unknown storage id: {each_fact.storage_id}")
+
+            self._upsert_content_element(each_fact, self._fact_to_row, memory_table)
+
+    def upsert_actions(self, actions: list[Action]) -> None:
+        for each_action in actions:
+            if each_action.storage_id.startswith("global:"):
+                memory_table = self.global_actions_table
+
+            elif each_action.storage_id.startswith("local_"):
+                selected_agent_id = self.get_selected_agent_id()
+                if not each_action.storage_id.startswith(f"local_{selected_agent_id}"):
+                    continue
+                memory_table = self.local_actions_table
+
+            else:
+                raise ValueError(f"Unknown storage id: {each_action.storage_id}")
+
+            self._upsert_content_element(each_action, self._action_to_row, memory_table)
+
+    def upsert_agent(self, agent: Agent) -> None:
+        new_row = self._agent_to_row(agent)
+        for each_row in self.agents_table.rows:
+            if each_row["agent_id"] == agent.agent_id:
+                each_row.update(new_row)
+                break
+        else:
+            self.agents_table.add_rows(new_row)
+
+    def remove_agent(self, agent: Agent) -> None:
+        to_remove = None
+        for each_row in self.agents_table.rows:
+            if each_row["agent_id"] == agent.agent_id:
+                to_remove = each_row
+                break
+        else:
+            raise ValueError(f"Could not find row with id {agent.agent_id}")
+        self.agents_table.remove_rows(each_row)
+
+        if len(self.agents_table.rows) >= 1:
+            first_agent_row = self.agents_table.rows[0]
+            self.select_agent(first_agent_row["agent_id"])
+
     def memory_tables(self, agent_id: str, is_local: bool) -> tuple[Table, Table]:
         if is_local:
-            facts = self.view_callbacks.receive_facts(None, agent_id)
-            actions = self.view_callbacks.receive_actions(None, agent_id)
+            facts = self.view_callbacks.get_facts(agent_id=agent_id)
+            actions = self.view_callbacks.get_facts(agent_id=agent_id)
         else:
-            facts = self.view_callbacks.receive_facts(None, None)
-            actions = self.view_callbacks.receive_actions(None, None)
+            facts = self.view_callbacks.get_facts()
+            actions = self.view_callbacks.get_actions()
 
         with nicegui.ui.column() as column:
             column.classes("flex flex-col full-height full-width")
@@ -578,9 +686,7 @@ class View:
                         {"name": "action", "label": "Action", "field": "action", "required": True, "align": "left", "type": "text"},
                         {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"}
                     ]
-                    rows = [
-                        {"id": each_action.storage_id, "action": each_action.content} for each_action in actions
-                    ]
+                    rows = [self._action_to_row(each_action) for each_action in actions]
                     # details (remove?, persist?)
                     actions_table = nicegui.ui.table(columns=columns, rows=rows, row_key="action", selection="multiple")
                     actions_table.on("selection", lambda: self.update_selected_actions(actions_table.selected, [move_button, delete_button]))
@@ -593,9 +699,7 @@ class View:
                         {"name": "fact", "label": "Fact", "field": "fact", "required": True, "align": "left", "type": "text"},
                         {"name": "id", "label": "ID", "field": "id", "required": True, "align": "left", "type": "text"}
                     ]
-                    rows = [
-                        {"id": each_fact.storage_id, "fact": each_fact.content} for each_fact in facts
-                    ]
+                    rows = [self._fact_to_row(each_fact) for each_fact in facts]
                     # details (remove?, persist?)
                     facts_table = nicegui.ui.table(columns=columns, rows=rows, row_key="id", selection="multiple")
                     facts_table.on("selection", lambda: self.update_selected_facts(facts_table.selected, [move_button, delete_button]))
