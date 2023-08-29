@@ -11,9 +11,6 @@ from new_attempt.model.agent.step_elements import Thought, Fact, Action, ActionA
 from new_attempt.model.storages.vector_storage.storage import VectorStorage
 
 
-# C = Thought | list[Fact] | Action | ActionArguments | ActionOutput | ActionWasSuccessful | Fact | Summary | IsFulfilled
-
-
 @dataclass
 class AgentArguments:
     task:                   str
