@@ -26,6 +26,7 @@ class View:
         self.pause_button = None
 
         self.current_thought_expansion = None
+        self.current_action_attempt = None
         self.waiting_label = None
 
         self.stream = None
@@ -335,7 +336,69 @@ class View:
         self.current_thought_expansion = None
         self.waiting_label = None
 
-    def add_thought(self, each_step: dict[str, any]) -> None:
+    def add_relevant_facts(self, relevant_facts: list[Fact]) -> bool:
+        with nicegui.ui.expansion(text="relevant facts") as fact_expansion:
+            fact_expansion.classes("full-width pl-8 bg-blue-300")
+            if relevant_facts is None:
+                self.waiting_label = nicegui.ui.label("retrieving relevant facts...")
+                return False
+
+            for each_fact in relevant_facts:
+                each_label = nicegui.ui.label(each_fact.content)
+                each_label.classes("flex-1 m-3 p-3 rounded-lg")
+
+        return True
+
+    def add_action_attempt(self, action_attempt: dict[str, any]) -> bool:
+        action_name = action_attempt.get("action_name")
+        if action_name is None:
+            self.waiting_label = nicegui.ui.label("deciding on action...")
+            return False
+
+        # extract each action attempt into method
+        with nicegui.ui.expansion(text=f"attempt #{action_name}") as action_expansion:
+            is_successful = action_attempt.get("is_successful")
+            if is_successful is None:
+                action_expansion.classes("full-width pl-8 bg-yellow-300")
+            elif is_successful:
+                action_expansion.classes("full-width pl-8 bg-green-300")
+            else:
+                action_expansion.classes("full-width pl-8 bg-red-300")
+
+            # extract action arguments into method
+            action_arguments = action_attempt.get("action_arguments")
+            if action_arguments is None:
+                self.waiting_label = nicegui.ui.label("extraction action parameters...")
+                return False
+            nicegui.ui.markdown(f"```json\n{action_arguments}\n```")
+
+            # extract action output into method
+            action_output = action_attempt.get("action_output")
+            if action_output is None:
+                self.waiting_label = nicegui.ui.label("executing action...")
+                return False
+            nicegui.ui.markdown(f"```json\n{action_output}\n```")
+
+            # extract resulting fact into method
+            resulting_fact = action_attempt.get("resulting_fact")
+            if resulting_fact is None:
+                self.waiting_label = nicegui.ui.label("composing fact...")
+                return False
+            each_label = nicegui.ui.label(resulting_fact)
+            each_label.classes("flex-1 m-3 p-3 bg-blue-200 rounded-lg")
+
+        return True
+
+    def add_summary(self, summary: Summary | None) -> bool:
+        if summary is None:
+            self.waiting_label = nicegui.ui.label("summarizing...")
+            return False
+
+        each_label = nicegui.ui.label(summary)
+        each_label.classes("flex-1 m-3 p-3 bg-white rounded-lg")
+        return True
+
+    def add_thought(self, each_step: dict[str, any]) -> bool:
         thought = each_step.get("thought")
 
         with nicegui.ui.expansion(text=thought) as self.current_thought_expansion:
@@ -347,69 +410,23 @@ class View:
             else:
                 self.current_thought_expansion.classes("full-width bg-red-300 rounded-lg")
 
-            # extract relevant facts into method
-            with nicegui.ui.expansion(text="relevant facts") as fact_expansion:
-                fact_expansion.classes("full-width pl-8 bg-blue-300")
-                relevant_facts = each_step.get("relevant_facts")
-                if relevant_facts is None:
-                    self.waiting_label = nicegui.ui.label("retrieving relevant facts...")
-                    return
-                for each_fact in relevant_facts:
-                    each_label = nicegui.ui.label(each_fact)
-                    each_label.classes("flex-1 m-3 p-3 rounded-lg")
+            if not self.add_relevant_facts(each_step["relevant_facts"]):
+                return False
 
-            # extract action attempts into method
             action_attempts = each_step.get("action_attempts")
-            if action_attempts is None or len(action_attempts) < 1:
+            if action_attempts is None:
                 self.waiting_label = nicegui.ui.label("attempting action...")
-                return
+                return False
 
             for each_action_attempt in action_attempts:
-                action_name = each_action_attempt.get("action_name")
-                if action_name is None:
-                    self.waiting_label = nicegui.ui.label("deciding on action...")
-                    return
+                if not self.add_action_attempt(each_action_attempt):
+                    return False
 
-                # extract each action attempt into method
-                with nicegui.ui.expansion(text=f"attempt #{action_name}") as action_expansion:
-                    is_successful = each_action_attempt.get("is_successful")
-                    if is_successful is None:
-                        action_expansion.classes("full-width pl-8 bg-yellow-300")
-                    elif is_successful:
-                        action_expansion.classes("full-width pl-8 bg-green-300")
-                    else:
-                        action_expansion.classes("full-width pl-8 bg-red-300")
-
-                    # extract action arguments into method
-                    action_arguments = each_action_attempt.get("action_arguments")
-                    if action_arguments is None:
-                        self.waiting_label = nicegui.ui.label("extraction action parameters...")
-                        return
-                    nicegui.ui.markdown(f"```json\n{action_arguments}\n```")
-
-                    # extract action output into method
-                    action_output = each_action_attempt.get("action_output")
-                    if action_output is None:
-                        self.waiting_label = nicegui.ui.label("executing action...")
-                        return
-                    nicegui.ui.markdown(f"```json\n{action_output}\n```")
-
-                    # extract resulting fact into method
-                    resulting_fact = each_action_attempt.get("resulting_fact")
-                    if resulting_fact is None:
-                        self.waiting_label = nicegui.ui.label("composing fact...")
-                        return
-                    each_label = nicegui.ui.label(resulting_fact)
-                    each_label.classes("flex-1 m-3 p-3 bg-blue-200 rounded-lg")
-
-            # extract summary into method
             summary = each_step.get("summary")
-            if summary is None:
-                self.waiting_label = nicegui.ui.label("summarizing...")
-                return
+            if not self.add_summary(summary):
+                return False
 
-            each_label = nicegui.ui.label(summary)
-            each_label.classes("flex-1 m-3 p-3 bg-white rounded-lg")
+            return True
 
     def pause_from_details(self, agent: Agent) -> None:
         if agent.status == "working":
