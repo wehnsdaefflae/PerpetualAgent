@@ -134,7 +134,7 @@ class View:
     def _update_left_drawer(self) -> None:
         self._update_agent_table()
 
-    def _update_main(self, source: Literal["agent_table", "fact_table", "action_table"] = "agent_table") -> None:
+    def _update_main(self, source: Literal["stream", "fact", "action"] = "stream") -> None:
         # update on
         #   agent click
         #   fact click
@@ -143,7 +143,7 @@ class View:
         # show agent details, fact details, or action details
 
         match source:
-            case "agent_table":
+            case "stream":
                 pass
                 # show stream of selected agent
                 # WHENEVER
@@ -157,13 +157,13 @@ class View:
                 # agent fact (is_successful) update
                 # agent summary (is_fulfilled) update
 
-            case "fact_table":
+            case "fact":
                 pass
                 # show fact details
                 # WHENEVER
                 # fact selected
 
-            case "action_table":
+            case "action":
                 pass
                 # show action details
                 # WHENEVER
