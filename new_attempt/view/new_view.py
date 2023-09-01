@@ -136,15 +136,17 @@ class View:
 
     def _update_main(self, source: Literal["agent_table", "fact_table", "action_table"] = "agent_table") -> None:
         # update on
+        #   agent click
         #   fact click
         #   action click
-        #   agent click
 
         # show agent details, fact details, or action details
 
         match source:
             case "agent_table":
                 pass
+                # show stream of selected agent
+                # WHENEVER
                 # agent status change
                 # agent thought update
                 # agent relevant facts update
@@ -157,13 +159,15 @@ class View:
 
             case "fact_table":
                 pass
-                # fact deletion
-                # fact retrieval
+                # show fact details
+                # WHENEVER
+                # fact selected
 
             case "action_table":
                 pass
-                # action deletion
-                # action execution
+                # show action details
+                # WHENEVER
+                # action selected
 
             case _:
                 raise Exception("Invalid source")
