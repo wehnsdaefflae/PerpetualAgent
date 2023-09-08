@@ -211,15 +211,16 @@ class View:
         # agent summary (is_fulfilled) update
 
         if isinstance(content, Status):
-            # update status
+            # update stream color, append status text
             pass
 
         elif isinstance(content, Thought):
-            # add thought
+            # add thought expansion
             pass
 
         elif isinstance(content, list) and all(isinstance(each, Fact) for each in content):
-            # add relevant facts
+            # fact previews, click to open details, make navigable
+            # https://github.com/zauberzeug/nicegui/tree/main/examples%2Fmodularization
             pass
 
         elif isinstance(content, ActionAttempt):
