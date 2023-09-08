@@ -1,10 +1,11 @@
 # coding=utf-8
+from __future__ import annotations
 from typing import Literal
 
 from nicegui import ui
 
 from new_attempt.model.agent.agent import Agent, Status
-from new_attempt.model.agent.step_elements import Thought, Fact, Action, ActionArguments, ActionOutput, Summary, ActionWasSuccessful, IsFulfilled, ActionAttempt
+from new_attempt.model.agent.step_elements import Thought, Fact, Action, ActionArguments, ActionOutput, Summary, ActionWasSuccessful, IsFulfilled, ActionAttempt, Step
 
 
 # coding=utf-8
@@ -29,6 +30,14 @@ class View:
         ui.query('#c1').classes("h-full")
         ui.query('#c2').classes("h-full")
         ui.query('#c3').classes("h-full")
+
+    def __enter__(self) -> View:
+        self.main.clear()
+        self.main.__enter__()
+        return self
+
+    def __exit__(self, exc_type: any, exc_value: any, traceback: any) -> None:
+        self.main.__exit__(exc_type, exc_value, traceback)
 
     def _create_header(self) -> ui.header:
         if self.header is not None:
@@ -137,6 +146,14 @@ class View:
     def _update_left_drawer(self) -> None:
         self._update_agent_table()
 
+    def _pause(self, agent: Agent) -> None:
+        print(f"Pausing agent {agent.agent_id}")
+
+    def _delete_dialog(self, agent: Agent) -> None:
+        print(f"Delete dialog for agent {agent.agent_id}")
+
+    def _render_history(self, stream: ui.column, history: list[Step]) -> None:
+        ui.markdown("History")
 
     def _agent_details(self, agent: Agent) -> None:
         task_label = ui.markdown(f"**Task:** {agent.arguments.task}")
@@ -158,6 +175,20 @@ class View:
 
         self._render_history(stream, agent.history)
 
+    def _get_selected_agent(self) -> Agent | None:
+        if self.agent_table is None:
+            return None
+
+        self.agent_table: ui.table
+        selected_row, = self.agent_table.selected
+        agent_id = selected_row["agent_id"]
+        return self._call_model.get_agent(agent_id)
+
+    def _get_selected_fact(self) -> Fact | None:
+        pass
+
+    def _get_selected_action(self) -> Action | None:
+        pass
 
     def _update_main(self, source: Literal["stream", "fact", "action"] = "stream") -> None:
         # show agent details, fact details, or action details
@@ -166,7 +197,7 @@ class View:
             case "stream":
                 # ON agent selected
                 # create agent step history in self.main
-                agent: Agent = self.get_selected_agent()
+                agent: Agent = self._get_selected_agent()
                 if agent is None:
                     ui.markdown("No agent selected")
                     return
@@ -271,3 +302,69 @@ class View:
         # update on
         #   any llm call
         pass
+
+
+class AgentDetails:
+    def __init__(self, agent_id: str) -> None:
+        self.agent_id = agent_id
+
+        self.task_label = None
+        self.progress_label = None
+        self.stream = None
+        self.buttons = None
+
+        with ui.row():
+            dummy = ui.markdown(f"Agent {agent_id}")
+
+
+class FactDetails:
+    def __init__(self, fact_id: str) -> None:
+        self.fact_id = fact_id
+
+        with ui.row():
+            dummy = ui.markdown(f"Fact {fact_id}")
+
+
+class ActionDetails:
+    def __init__(self, action_id: str) -> None:
+        self.action_id = action_id
+        with ui.row():
+            dummy = ui.markdown(f"Action {action_id}")
+
+
+class ViewSingleton:
+    view = None
+
+    @staticmethod
+    def get_view() -> View:
+        if ViewSingleton.view is None:
+            ViewSingleton.view = View()
+        return ViewSingleton.view
+
+
+@ui.page("/", title="OpenMind")
+def index() -> None:
+    ViewSingleton.get_view()
+
+
+@ui.page("/agent/{agent_id}", title="OpenMind Agent Details")
+def agent_details(agent_id: str) -> None:
+    with ViewSingleton.get_view():
+        AgentDetails(agent_id)
+
+
+@ui.page("/fact/{fact_id}", title="OpenMind Fact Details")
+def fact_details(fact_id: str) -> None:
+    with ViewSingleton.get_view():
+        FactDetails(fact_id)
+
+
+@ui.page("/action/{action_id}", title="OpenMind Action Details")
+def action_details(action_id: str) -> None:
+    with ViewSingleton.get_view():
+        ActionDetails(action_id)
+
+# routing:
+# agent_details: url/?agent=[agent_id]
+# fact_details: url/?fact=[fact_id]
+# action_details: url/?action=[action_id]
