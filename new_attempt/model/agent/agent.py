@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 import random
 import threading
 import time
@@ -31,6 +32,13 @@ class AgentArguments:
     llm_summary:            str
 
 
+class Status(enum.StrEnum):
+    FINISHED = "finished"
+    PENDING = "pending"
+    WORKING = "working"
+    PAUSED = "paused"
+
+
 class Agent(threading.Thread):
     @staticmethod
     def from_dict(agent_dict: dict[str, any], fact_storage: VectorStorage[Fact], action_storage: VectorStorage[Action], callbacks: Callbacks) -> Agent:
@@ -43,7 +51,7 @@ class Agent(threading.Thread):
         return Agent(
             agent_dict["agent_id"], agent_arguments,
             fact_storage, action_storage, callbacks,
-            _status=agent_dict["status"],
+            _status=Status(agent_dict["status"]),
             _summary=agent_dict["summary"],
             _history=[Step.from_dict(each_step) for each_step in history] if history is not None else None,
         )
@@ -51,7 +59,7 @@ class Agent(threading.Thread):
     def __init__(self,
                  agent_id: str, arguments: AgentArguments,
                  fact_storage: VectorStorage[Fact], action_storage: VectorStorage[Action], callbacks: Callbacks,
-                 _status: Literal["finished", "pending", "working", "paused"] = "paused", _summary: str = "", _history: list[Step] | None = None) -> None:
+                 _status: Status = Status.PAUSED, _summary: str = "", _history: list[Step] | None = None) -> None:
 
         if callbacks is None:
             raise ValueError("Agent callbacks not set.")
@@ -82,7 +90,7 @@ class Agent(threading.Thread):
         return {
             "agent_id": self.agent_id,
             "arguments": asdict(self.arguments),
-            "status": self.status,
+            "status": self.status.value,
             "summary": self.summary,
             "history": [each_step.to_dict() for each_step in self.history],
         }

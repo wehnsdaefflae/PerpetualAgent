@@ -3,6 +3,9 @@ from typing import Literal
 
 from nicegui import ui
 
+from new_attempt.model.agent.agent import Agent, Status
+from new_attempt.model.agent.step_elements import Thought, Fact, Action, ActionArguments, ActionOutput, Summary, ActionWasSuccessful, IsFulfilled, ActionAttempt
+
 
 # coding=utf-8
 class View:
@@ -134,43 +137,125 @@ class View:
     def _update_left_drawer(self) -> None:
         self._update_agent_table()
 
-    def _update_main(self, source: Literal["stream", "fact", "action"] = "stream") -> None:
-        # update on
-        #   agent click
-        #   fact click
-        #   action click
 
+    def _agent_details(self, agent: Agent) -> None:
+        task_label = ui.markdown(f"**Task:** {agent.arguments.task}")
+        task_label.classes("text-xl flex-none")
+
+        progress_label = ui.markdown(f"**Progress summary:** {agent.summary}")
+        progress_label.classes("flex-none")
+
+        with ui.scroll_area() as self.main:
+            self.main.classes("flex-1")
+
+            with ui.column() as stream:
+                stream.classes("flex flex-col full-width")
+
+        with ui.row() as buttons:
+            buttons.classes("flex-none justify-around full-width")
+            pause_button = ui.button("pause", on_click=lambda: self._pause(agent))
+            delete_button = ui.button("delete", on_click=lambda: self._delete_dialog(agent))
+
+        self._render_history(stream, agent.history)
+
+
+    def _update_main(self, source: Literal["stream", "fact", "action"] = "stream") -> None:
         # show agent details, fact details, or action details
 
         match source:
             case "stream":
-                pass
-                # show stream of selected agent
-                # WHENEVER
-                # agent status change
-                # agent thought update
-                # agent relevant facts update
-                # agent action attempt update
-                # agent action update
-                # agent action arguments update
-                # agent action output update
-                # agent fact (is_successful) update
-                # agent summary (is_fulfilled) update
+                # ON agent selected
+                # create agent step history in self.main
+                agent: Agent = self.get_selected_agent()
+                if agent is None:
+                    ui.markdown("No agent selected")
+                    return
+
+                self._agent_details(agent)
 
             case "fact":
-                pass
-                # show fact details
-                # WHENEVER
-                # fact selected
+                # ON fact selected
+                # create fact details in self.main
+                fact: Fact = self.get_selected_fact()
+                if fact is None:
+                    ui.markdown("No fact selected")
+                    return
+
+                self._fact_details(fact)
 
             case "action":
-                pass
-                # show action details
-                # WHENEVER
-                # action selected
+                # ON action selected
+                # create action details in self.main
+                action: Action = self.get_selected_action()
+                if action is None:
+                    ui.markdown("No action selected")
+                    return
+
+                self._action_details(action)
 
             case _:
                 raise Exception("Invalid source")
+
+    def _update_stream(self, content: Status | Thought | list[Fact] | ActionAttempt | Action | ActionArguments | ActionOutput | ActionWasSuccessful | Fact | Summary | IsFulfilled) -> None:
+        # get stream element
+        # raise exception if no stream element
+
+        # agent status change
+        # agent thought update
+        # agent relevant facts update
+        # agent action attempt update
+        # agent action update
+        # agent action arguments update
+        # agent action output update
+        # agent fact (is_successful) update
+        # agent summary (is_fulfilled) update
+
+        if isinstance(content, Status):
+            # update status
+            pass
+
+        elif isinstance(content, Thought):
+            # add thought
+            pass
+
+        elif isinstance(content, list) and all(isinstance(each, Fact) for each in content):
+            # add relevant facts
+            pass
+
+        elif isinstance(content, ActionAttempt):
+            pass
+            # add attempt
+
+        elif isinstance(content, Action):
+            # add action
+            pass
+
+        elif isinstance(content, ActionArguments):
+            # add arguments
+            pass
+
+        elif isinstance(content, ActionOutput):
+            # add output
+            pass
+
+        elif isinstance(content, ActionWasSuccessful):
+            pass
+            # update action successful
+
+        elif isinstance(content, Fact):
+            # add new fact
+            pass
+
+        elif isinstance(content, Summary):
+            # add summary
+            pass
+
+        elif isinstance(content, IsFulfilled):
+            pass
+            # update fulfilled
+
+        else:
+            raise Exception(f"Invalid element type {type(content)}")
 
     def _update_right_drawer(self) -> None:
         # update on
