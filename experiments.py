@@ -50,7 +50,7 @@ def summarize(text: str, *args: any, context: str | None = None, **kwargs: any) 
             return output
 
         except openai.error.OpenAIError as e:
-            if not e.error("too long"):  # todo: thats sth else
+            if e.code != "context_length_exceeded":
                 raise e
 
             sub_context = None
@@ -108,10 +108,28 @@ def prompt(instruction: str, payload: str, *args: any, summary: str | None = Non
             return Response(output, new_summary)
 
         except openai.error.OpenAIError as e:
-            if not e.error("too long"):  # todo: sth else
+            if e.code != "context_length_exceeded":
                 raise e
 
             if len(payload) < 1_000:
                 raise ValueError("Payload small, but request still too long.") from e
 
             payload = summarize(payload, *args, context=summary, **kwargs)
+
+
+def main() -> None:
+    openai.api_key_path = "resources/openai_api_key.txt"
+    messages = [
+        {
+            "role": "user",
+            "content": "Hello, I am a human." * 1_000
+        },
+    ]
+    try:
+        response_message = openai.ChatCompletion.create(messages=messages, model="gpt-3.5-turbo")
+    except openai.error.OpenAIError as e:
+        print(e)
+
+
+if __name__ == "__main__":
+    main()
