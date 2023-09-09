@@ -1,9 +1,11 @@
 # coding=utf-8
 from dataclasses import dataclass
-
 import openai
-
 from utils.misc import segment_text
+
+
+def indent(text: str, indent_str: str = "    ") -> str:
+    return "\n".join(f"{indent_str}{line}" for line in text.splitlines())
 
 
 @dataclass(frozen=True)
@@ -12,34 +14,26 @@ class Response:
     summary: str
 
 
-def indent(text: str, indent_str: str = "    ") -> str:
-    return "\n".join(f"{indent_str}{line}" for line in text.splitlines())
+def summarize(
+        content: str, *args: any,
+        context: str = "[no context provided]",
+        content_tag: str = "Content",
+        context_tag: str = "Context",
+        **kwargs: any) -> str:
 
-
-def summarize(text: str, *args: any, context: str | None = None, **kwargs: any) -> str:
     while True:
-        if context is None:
-            context_prompt = ""
-            instruction = "Summarize the above text in the outermost `Content` tag.\n"
-
-        else:
-            context_prompt = (
-                f"<DontRepeat>\n"
-                f"{indent(context)}\n"
-                f"</DontRepeat>\n"
-                f"\n"
-            )
-            instruction = (
-                "Summarize the above text in the outermost `Content` tag. In your summary, consider the information in the outermost `DontRepeat` tag as already known to the reader."
-            )
-
         summarize_prompt = (
-            f"{context_prompt}"
-            f"<Content>\n"
-            f"{indent(text)}\n"
-            f"</Content>\n"
+            f"<{context_tag}>\n"
+            f"{indent(context)}\n"
+            f"</{context_tag}>\n"
             f"\n"
-            f"{instruction}"
+            f"<{content_tag}>\n"
+            f"{indent(content)}\n"
+            f"</{content_tag}>\n"
+            f"\n"
+            f"Summarize the text in the outermost `{content_tag}` tag. "
+            f"Consider in your summary that the information in the outermost "
+            f"`{context_tag}` tag, if provided,  is already known to the reader."
         )
 
         message = {"role": "user", "content": summarize_prompt}
@@ -53,68 +47,68 @@ def summarize(text: str, *args: any, context: str | None = None, **kwargs: any) 
             if e.code != "context_length_exceeded":
                 raise e
 
-            sub_context = None
+            rolling_summary = None
             summaries = list()
-            for i, each_segment in enumerate(segment_text(text)):
-                each_summary = summarize(each_segment, *args, context=sub_context, **kwargs)
+            segments = segment_text(content)
+            for i, each_segment in enumerate(segments):
+                each_summary = summarize(each_segment, *args, context=rolling_summary, **kwargs)
                 summaries.append(each_summary)
                 if i < 1:
-                    sub_context = each_summary
+                    rolling_summary = each_summary
                 else:
-                    sub_context = summarize(f"{sub_context}\n{each_summary}", *args, **kwargs)
+                    rolling_summary = summarize(f"{rolling_summary}\n{each_summary}", *args, **kwargs)
 
-            text = "\n".join(summaries)
+            content = "\n".join(summaries)
 
 
-def prompt(instruction: str, payload: str, *args: any, summary: str | None = None, **kwargs: any) -> Response:
+def respond(
+        instruction: str, data: str, *args: any,
+        recap: str = "[conversation did not start yet]",
+        max_instruction_len: int = 1_000,
+        min_data_len: int = 100,
+        recap_tag: str = "Recap",
+        data_tag: str = "Data",
+        **kwargs: any) -> Response:
+
     len_instruction = len(instruction)
-    if len_instruction >= 1_000:
-        raise ValueError("Instruction too long")
+    if len_instruction >= max_instruction_len:
+        raise ValueError(f"Instruction too long: {len_instruction} >= {max_instruction_len}")
 
     while True:
-        prompt_text = (
-            f"<Progress>\n"
-            f"{indent(summary)}\n"
-            f"</Progress>\n"
+        prompt = (
+            f"<{recap_tag}>\n"
+            f"{indent(recap)}\n"
+            f"</{recap_tag}>\n"
             f"\n"
-            f"<Important>\n"
-            f"{indent(payload)}\n"
-            f"</Important>\n"
+            f"<{data_tag}>\n"
+            f"{indent(data)}\n"
+            f"</{data_tag}>\n"
             f"\n"
             f"{instruction}"
         )
 
-        message = {"role": "user", "content": prompt_text}
+        messages = [{"role": "user", "content": prompt}]
         try:
-            response_message = openai.ChatCompletion.create(*args, messages=[message], **kwargs)
+            response_message = openai.ChatCompletion.create(*args, messages=messages, **kwargs)
             first_message = response_message.choices[0]
             output = first_message.content
 
-            new_summary = summarize(
-                f"<ConversationLog>\n"
-                f"{indent(summary)}\n"
-                f"</ConversationLog>\n"
-                f"\n"
-                f"<UserRequest>\n"
-                f"{indent(instruction)}\n"
-                f"</UserRequest>\n"
-                f"\n"
-                f"<AssistantResponse>\n"
-                f"{indent(output)}\n"
-                f"</AssistantResponse>\n"
-                f"\n",
+            updated_recap = summarize(
+                f"RECAP: {recap}\n" +
+                f"USER: {instruction}\n" +
+                f"ASSISTANT: {output}",
                 *args, **kwargs)
 
-            return Response(output, new_summary)
+            return Response(output, updated_recap)
 
         except openai.error.OpenAIError as e:
             if e.code != "context_length_exceeded":
                 raise e
 
-            if len(payload) < 1_000:
-                raise ValueError("Payload small, but request still too long.") from e
+            if len(data) < min_data_len:
+                raise ValueError("Data payload small, but request still too long.") from e
 
-            payload = summarize(payload, *args, context=summary, **kwargs)
+            data = summarize(data, *args, context=recap, **kwargs)
 
 
 def main() -> None:
