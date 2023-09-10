@@ -31,9 +31,8 @@ def summarize(
             f"{indent(content)}\n"
             f"</{content_tag}>\n"
             f"\n"
-            f"Summarize the text in the outermost `{content_tag}` tag. "
-            f"Consider in your summary that the information in the outermost "
-            f"`{context_tag}` tag, if provided,  is already known to the reader."
+            f"The information in the outermost `{context_tag}` tag is known. "
+            f"Summarize only unique details from the text in the outermost `{content_tag}` tag."
         )
 
         message = {"role": "user", "content": summarize_prompt}
@@ -65,7 +64,7 @@ def respond(
         instruction: str, data: str, *args: any,
         recap: str = "[conversation did not start yet]",
         max_instruction_len: int = 1_000,
-        min_data_len: int = 100,
+        min_data_len: int = 10,
         recap_tag: str = "Recap",
         data_tag: str = "Data",
         **kwargs: any) -> Response:
