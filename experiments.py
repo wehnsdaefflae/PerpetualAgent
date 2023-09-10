@@ -22,6 +22,7 @@ class Response:
 def summarize(
         content: str, *args: any,
         context: str = "[not provided]",
+        additional_instruction: str | None = None,
         min_length: int = 300,
         _content_tag: str = "Content",
         _context_tag: str = "Context",
@@ -42,9 +43,12 @@ def summarize(
             f"Take this into account when summarizing the text in the outermost `{_content_tag}` tag."
         )
 
-        message = {"role": "user", "content": summarize_prompt}
+        if additional_instruction is not None:
+            summarize_prompt += f" {additional_instruction.strip()}"
+
+        messages = [{"role": "user", "content": summarize_prompt}]
         try:
-            response_message = openai.ChatCompletion.create(*args, messages=[message], **kwargs)
+            response_message = openai.ChatCompletion.create(*args, messages=messages, **kwargs)
             first_choice, = response_message.choices
             first_message = first_choice.message
             output = first_message.content
@@ -120,7 +124,9 @@ def respond(
                 f"RECAP: {recap}\n" +
                 f"USER: {instruction}\n" +
                 f"ASSISTANT: {output}",
-                *args, **kwargs)
+                *args,
+                additional_instruction="Preserve all literal information.",
+                **kwargs)
 
             return Response(output, updated_recap)
 
@@ -135,17 +141,14 @@ def respond(
 
 
 def run_dialog() -> None:
-    text = (
-        "ausgelöste hohe Inflation und der wachsende Druck für deutliche Lohnerhöhungen erforderten ein "
-        "ungewöhnliches Maß an Mobilisierung unter den Gewerkschaftsmitgliedern.ieser Kontext stellte "
-        "sowohl für die Arbeitnehmer- als auch für die Arbeitgeberseite eine noch nie dagewesene "
-        "Herausforderung dar und erforderte neuartige Ansätze, um die notwendige Kraft zu mobilisieren."
-    )
-
-    instructions = "What is the text about?"
-
-    response = respond(instructions, data=text, model="gpt-3.5-turbo")
-    print(response)
+    summary = "[conversation did not start yet]"
+    while True:
+        instructions = input("User: ")
+        response = respond(instructions, model="gpt-3.5-turbo", recap=summary)
+        output = response.output
+        print(f"Assistant: {output}")
+        summary = response.summary
+        print(f"(Summary: {summary})")
 
 
 def run_summarize() -> None:
@@ -157,8 +160,8 @@ def run_summarize() -> None:
 def main() -> None:
     openai.api_key_path = "resources/openai_api_key.txt"
 
-    # run_dialog()
-    run_summarize()
+    run_dialog()
+    # run_summarize()
 
 
 if __name__ == "__main__":
