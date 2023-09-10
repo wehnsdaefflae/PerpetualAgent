@@ -15,6 +15,7 @@ colorama~=0.4.6
 datasets==2.14.4
 webdriver-manager==4.0.0
 hyperdb-python==0.1.4
+pdfminer.six==20221105
 
 wikipedia~=1.4.0
 pardoc==0.1.1
