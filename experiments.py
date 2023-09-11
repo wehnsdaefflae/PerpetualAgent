@@ -101,12 +101,12 @@ def summarize(
         additional_instruction: str | None = None,
         reserved_response_ratio: float = .5,
         segment_length: int = 2_000,
-        model_name: str = "gpt-3.5-turbo",
         _margin: float = .1,
         _content_tag: str = "Content",
         _context_tag: str = "Context",
         **kwargs: any) -> str:
 
+    model_name = kwargs["model"]
     max_tokens = get_max_tokens(model_name)
 
     summarize_prompt = _summarize_prompt(content, context, additional_instruction, _content_tag, _context_tag)
@@ -114,7 +114,7 @@ def summarize(
     len_tokenized_prompt = get_token_len(messages, model_name) * (1. + _margin)
 
     while len_tokenized_prompt / max_tokens >= reserved_response_ratio:
-        print("too much, segmenting")
+        print("segmenting...")
         rolling_summary = None
         summaries = list()
         segments = list(segment_text(content, segment_length=segment_length))
@@ -124,7 +124,6 @@ def summarize(
                 each_summary = summarize(
                     each_segment,
                     *args,
-                    model_name=model_name,
                     **kwargs
                 )
                 rolling_summary = each_summary
@@ -134,10 +133,9 @@ def summarize(
                     each_segment,
                     *args,
                     context=rolling_summary,
-                    model_name=model_name,
                     **kwargs
                 )
-                rolling_summary = summarize(f"{rolling_summary}\n{each_summary}", *args, model_name=model_name, **kwargs)
+                rolling_summary = summarize(f"{rolling_summary}\n{each_summary}", *args, **kwargs)
 
             summaries.append(each_summary)
 
@@ -147,7 +145,7 @@ def summarize(
         messages = [{"role": "user", "content": summarize_prompt}]
         len_tokenized_prompt = get_token_len(messages, model_name)
 
-    response_message = openai.ChatCompletion.create(*args, model_name=model_name, messages=messages, **kwargs)
+    response_message = openai.ChatCompletion.create(*args, messages=messages, **kwargs)
     first_choice, = response_message.choices
     first_message = first_choice.message
     output = first_message.content
@@ -175,7 +173,6 @@ def respond(
         instruction: str, *args: any,
         data: str | None = None,
         recap: str | None = None,
-        model_name: str = "gpt-3.5-turbo",
         reserved_response_ratio: float = .5,
         _margin: float = .1,
         _recap_tag: str = "ConversationLog",
@@ -183,6 +180,7 @@ def respond(
         _data_tag: str = "AdditionalData",
         **kwargs: any) -> Response:
 
+    model_name = kwargs["model"]
     max_tokens = get_max_tokens(model_name)
 
     prompt = _response_prompt(instruction, recap, data, _recap_tag, _data_tag)
@@ -190,16 +188,17 @@ def respond(
     len_tokenized_prompt = get_token_len(messages, model_name) * (1. + _margin)
 
     while len_tokenized_prompt / max_tokens >= reserved_response_ratio:
+        print("condensing...")
         len_instruction = len(instruction)
         len_recap = -1 if recap is None else len(recap)
         len_data = -1 if data is None else len(data)
 
         if len_instruction >= len_data and len_instruction >= len_recap:
-            instruction = summarize(instruction, *args, context=recap, model_name=model_name, **kwargs)
+            instruction = summarize(instruction, *args, context=recap, **kwargs)
 
         elif len_recap >= len_instruction and len_recap >= len_data:
             focus_conversation = "Be very concise but preserve literal information and conversational character."
-            recap_text = summarize(recap, *args, additional_instruction=focus_conversation, model_name=model_name, **kwargs)
+            recap_text = summarize(recap, *args, additional_instruction=focus_conversation, **kwargs)
             recap = (
                 f"<{_summary_tag}>\n" +
                 f"{indent(recap_text.rstrip())}\n" +
@@ -208,7 +207,7 @@ def respond(
 
         elif len_data >= len_instruction and len_data >= len_recap:
             focus_instruction = f"Focus on information relevant to the following request: \"{instruction.strip()}\""
-            data = summarize(data, *args, context=recap, additional_instructions=focus_instruction, model_name=model_name, **kwargs)
+            data = summarize(data, *args, context=recap, additional_instructions=focus_instruction, **kwargs)
 
         else:
             raise ValueError(
@@ -220,7 +219,7 @@ def respond(
         messages = [{"role": "user", "content": prompt}]
         len_tokenized_prompt = get_token_len(messages, model_name)
 
-    response_message = openai.ChatCompletion.create(*args, messages=messages, model_name=model_name, **kwargs)
+    response_message = openai.ChatCompletion.create(*args, messages=messages, **kwargs)
     first_choice, = response_message.choices
     first_message = first_choice.message
     output = first_message.content
@@ -262,8 +261,8 @@ def run_summarize() -> None:
 def main() -> None:
     openai.api_key_path = "resources/openai_api_key.txt"
 
-    run_dialog()
-    # run_summarize()
+    # run_dialog()
+    run_summarize()
 
 
 if __name__ == "__main__":
