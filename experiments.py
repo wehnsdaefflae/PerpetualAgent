@@ -111,9 +111,9 @@ def summarize(
 
     summarize_prompt = _summarize_prompt(content, context, additional_instruction, _content_tag, _context_tag)
     messages = [{"role": "user", "content": summarize_prompt}]
-    len_tokenized_prompt = get_token_len(messages, model_name)
+    len_tokenized_prompt = get_token_len(messages, model_name) * (1. + _margin)
 
-    while len_tokenized_prompt / max_tokens >= reserved_response_ratio - _margin:
+    while len_tokenized_prompt / max_tokens >= reserved_response_ratio:
         print("too much, segmenting")
         rolling_summary = None
         summaries = list()
@@ -187,9 +187,9 @@ def respond(
 
     prompt = _response_prompt(instruction, recap, data, _recap_tag, _data_tag)
     messages = [{"role": "user", "content": prompt}]
-    len_tokenized_prompt = get_token_len(messages, model_name)
+    len_tokenized_prompt = get_token_len(messages, model_name) * (1. + _margin)
 
-    while len_tokenized_prompt / max_tokens >= reserved_response_ratio - _margin:
+    while len_tokenized_prompt / max_tokens >= reserved_response_ratio:
         len_instruction = len(instruction)
         len_recap = -1 if recap is None else len(recap)
         len_data = -1 if data is None else len(data)
