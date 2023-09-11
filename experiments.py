@@ -6,8 +6,8 @@ from pdfminer.high_level import extract_text
 from utils.misc import segment_text
 
 
-def indent(text: str, indent_str: str = "    ") -> str:
-    return "\n".join(f"{indent_str}{line}" for line in text.splitlines())
+def indent(text: str, indent_str: str = "    ", times: int = 1) -> str:
+    return "\n".join(f"{indent_str * times}{line}" for line in text.splitlines())
 
 
 @dataclass(frozen=True)
@@ -21,30 +21,41 @@ class Response:
 
 def summarize(
         content: str, *args: any,
-        context: str = "[not provided]",
+        context: str | None = None,
         additional_instruction: str | None = None,
         min_length: int = 300,
         _content_tag: str = "Content",
         _context_tag: str = "Context",
         **kwargs: any) -> str:
-
     # todo: problem: might return just very little remaining tokens
     while True:
+        if context is None:
+            context_element = ""
+            instruction = f"Summarize the text in the outermost `{_content_tag}` tag."
+
+        else:
+            context_element = (
+                f"<{_context_tag}>\n"
+                f"{indent(context).rstrip()}\n"
+                f"</{_context_tag}>\n"
+                f"\n"
+            )
+            instruction = (
+                f"Any information provided in the outermost `{_context_tag}` tag is known. "
+                f"Take this into account when summarizing the text in the outermost `{_content_tag}` tag."
+            )
+
+        if additional_instruction is not None:
+            instruction += f" {additional_instruction.strip()}"
+
         summarize_prompt = (
-            f"<{_context_tag}>\n"
-            f"{indent(context).rstrip()}\n"
-            f"</{_context_tag}>\n"
-            f"\n"
+            f"{context_element}"
             f"<{_content_tag}>\n"
             f"{indent(content).rstrip()}\n"
             f"</{_content_tag}>\n"
             f"\n"
-            f"Any information provided in the outermost `{_context_tag}` tag is known. "
-            f"Take this into account when summarizing the text in the outermost `{_content_tag}` tag."
+            f"{instruction}"
         )
-
-        if additional_instruction is not None:
-            summarize_prompt += f" {additional_instruction.strip()}"
 
         messages = [{"role": "user", "content": summarize_prompt}]
         try:
@@ -83,44 +94,38 @@ def respond(
         instruction: str, *args: any,
         data: str | None = None,
         recap: str | None = None,
-        max_recap_length: int = 1_000,
-        max_instruction_len: int = 1_000,
-        min_data_len: int = 10,
         _recap_tag: str = "ConversationLog",
+        _summary_tag: str = "ConversationSummary",
         _data_tag: str = "AdditionalData",
         **kwargs: any) -> Response:
 
-    len_instruction = len(instruction)
-    if len_instruction >= max_instruction_len:
-        raise ValueError(f"Instruction too long: {len_instruction} >= {max_instruction_len}")
-
-    if data is None:
-        data_element = ""
-
-    else:
-        data_element = (
-            f"<{_data_tag}>\n"
-            f"{indent(data).rstrip()}\n"
-            f"</{_data_tag}>\n"
-            f"\n"
-        )
-
-    if recap is None:
-        recap_element = ""
-
-    else:
-        recap_element = (
-            f"<{_recap_tag}>\n"
-            f"{indent(recap).rstrip()}\n"
-            f"</{_recap_tag}>\n"
-            f"\n"
-        )
-
     while True:
+        if data is None:
+            data_element = ""
+
+        else:
+            data_element = (
+                f"<{_data_tag}>\n"
+                f"{indent(data).rstrip()}\n"
+                f"</{_data_tag}>\n"
+                f"\n"
+            )
+
+        if recap is None:
+            recap_element = ""
+
+        else:
+            recap_element = (
+                f"<{_recap_tag}>\n"
+                f"{indent(recap).rstrip()}\n"
+                f"</{_recap_tag}>\n"
+                f"\n"
+            )
+
         prompt = (
-            f"{recap_element}"
-            f"{data_element}"
-            f"{instruction.rstrip()}"
+                recap_element +
+                data_element +
+                instruction.rstrip()
         )
 
         messages = [{"role": "user", "content": prompt}]
@@ -130,39 +135,48 @@ def respond(
             first_message = first_choice.message
             output = first_message.content
 
-            updated_recap = (
-                                (f"" if recap is None else f"{recap}\n") +
-                                f"<UserRequest>\n"
-                                f"{indent(instruction).rstrip()}\n"
-                                f"</UserRequest>\n"
-                                f"\n" +
-                                f"<AssistantResponse>\n"
-                                f"{indent(output).rstrip()}\n"
-                                f"</AssistantResponse>"
+            updated_recap_content = (
+                    (f"" if recap is None else f"{recap}\n") +
+                    "<UserRequest>\n" +
+                    f"{indent(instruction).rstrip()}\n" +
+                    f"</UserRequest>\n" +
+                    f"\n" +
+                    f"<AssistantResponse>\n" +
+                    f"{indent(output).rstrip()}\n" +
+                    f"</AssistantResponse>"
             )
 
-            if len(updated_recap) >= max_recap_length:
-                summary = summarize(
-                    updated_recap,
-                    *args,
-                    additional_instruction="Be very concise but preserve all literal information as well as the conversational character.",
-                    **kwargs)
-                updated_recap = (
-                    f"<ConversationSummary>\n"
-                    f"{indent(summary).rstrip()}\n"
-                    f"</ConversationSummary>"
-                )
-
-            return Response(output, updated_recap)
+            return Response(output, updated_recap_content)
 
         except openai.error.OpenAIError as e:
             if e.code != "context_length_exceeded":
                 raise e
 
-            if len(data) < min_data_len:
-                raise ValueError("Data payload small, but request still too long.") from e
+            len_instruction = len(instruction)
+            len_recap = -1 if recap is None else len(recap)
+            len_data = -1 if data is None else len(data)
 
-            data = summarize(data, *args, context=recap, **kwargs)
+            if len_instruction >= len_data and len_instruction >= len_recap:
+                instruction = summarize(instruction, *args, context=recap, **kwargs)
+
+            elif len_recap >= len_instruction and len_recap >= len_data:
+                focus_conversation = "Be very concise but preserve literal information and conversational character."
+                recap_text = summarize(recap, *args, additional_instruction=focus_conversation, **kwargs)
+                recap = (
+                    f"<{_summary_tag}>\n" +
+                    f"{indent(recap_text.rstrip())}\n" +
+                    f"</{_summary_tag}>"
+                )
+
+            elif len_data >= len_instruction and len_data >= len_recap:
+                focus_instruction = f"Focus on information relevant to the following request: \"{instruction.strip()}\""
+                data = summarize(data, *args, context=recap, additional_instructions=focus_instruction, **kwargs)
+
+            else:
+                raise ValueError(
+                    f"Undefined component lengths: "
+                    f"len_instruction {len_instruction}, len_recap {len_recap}, len_data {len_data}."
+                ) from e
 
 
 def run_dialog() -> None:
