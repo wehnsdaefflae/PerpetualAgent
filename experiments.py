@@ -32,11 +32,11 @@ def summarize(
     while True:
         summarize_prompt = (
             f"<{_context_tag}>\n"
-            f"{indent(context)}\n"
+            f"{indent(context).rstrip()}\n"
             f"</{_context_tag}>\n"
             f"\n"
             f"<{_content_tag}>\n"
-            f"{indent(content)}\n"
+            f"{indent(content).rstrip()}\n"
             f"</{_content_tag}>\n"
             f"\n"
             f"Any information provided in the outermost `{_context_tag}` tag is known. "
@@ -82,11 +82,12 @@ def summarize(
 def respond(
         instruction: str, *args: any,
         data: str | None = None,
-        recap: str = "[conversation did not start yet]",
+        recap: str | None = None,
+        max_recap_length: int = 1_000,
         max_instruction_len: int = 1_000,
         min_data_len: int = 10,
-        _recap_tag: str = "Recap",
-        _data_tag: str = "Data",
+        _recap_tag: str = "ConversationLog",
+        _data_tag: str = "AdditionalData",
         **kwargs: any) -> Response:
 
     len_instruction = len(instruction)
@@ -94,23 +95,32 @@ def respond(
         raise ValueError(f"Instruction too long: {len_instruction} >= {max_instruction_len}")
 
     if data is None:
-        data_prompt = ""
+        data_element = ""
 
     else:
-        data_prompt = (
+        data_element = (
             f"<{_data_tag}>\n"
-            f"{indent(data)}\n"
+            f"{indent(data).rstrip()}\n"
             f"</{_data_tag}>\n"
             f"\n"
         )
-    while True:
-        prompt = (
+
+    if recap is None:
+        recap_element = ""
+
+    else:
+        recap_element = (
             f"<{_recap_tag}>\n"
-            f"{indent(recap)}\n"
+            f"{indent(recap).rstrip()}\n"
             f"</{_recap_tag}>\n"
             f"\n"
-            f"{data_prompt}"
-            f"{instruction}"
+        )
+
+    while True:
+        prompt = (
+            f"{recap_element}"
+            f"{data_element}"
+            f"{instruction.rstrip()}"
         )
 
         messages = [{"role": "user", "content": prompt}]
@@ -120,13 +130,28 @@ def respond(
             first_message = first_choice.message
             output = first_message.content
 
-            updated_recap = summarize(
-                f"RECAP: {recap}\n" +
-                f"USER: {instruction}\n" +
-                f"ASSISTANT: {output}",
-                *args,
-                additional_instruction="Preserve all literal information.",
-                **kwargs)
+            updated_recap = (
+                                (f"" if recap is None else f"{recap}\n") +
+                                f"<UserRequest>\n"
+                                f"{indent(instruction).rstrip()}\n"
+                                f"</UserRequest>\n"
+                                f"\n" +
+                                f"<AssistantResponse>\n"
+                                f"{indent(output).rstrip()}\n"
+                                f"</AssistantResponse>"
+            )
+
+            if len(updated_recap) >= max_recap_length:
+                summary = summarize(
+                    updated_recap,
+                    *args,
+                    additional_instruction="Be very concise but preserve all literal information as well as the conversational character.",
+                    **kwargs)
+                updated_recap = (
+                    f"<ConversationSummary>\n"
+                    f"{indent(summary).rstrip()}\n"
+                    f"</ConversationSummary>"
+                )
 
             return Response(output, updated_recap)
 
@@ -141,14 +166,17 @@ def respond(
 
 
 def run_dialog() -> None:
-    summary = "[conversation did not start yet]"
+    summary = None
     while True:
         instructions = input("User: ")
         response = respond(instructions, model="gpt-3.5-turbo", recap=summary)
         output = response.output
         print(f"Assistant: {output}")
         summary = response.summary
-        print(f"(Summary: {summary})")
+        print()
+        print(f"Summary:\n{summary}")
+        print()
+        print()
 
 
 def run_summarize() -> None:
