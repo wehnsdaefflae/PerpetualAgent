@@ -69,14 +69,16 @@ def _summarize_prompt(
         context: str | None,
         additional_instruction: str | None,
         _content_tag: str, _context_tag: str) -> str:
+
     context_element = _make_element(context, _context_tag)
-    if len(context_element) >= 1:
-        instruction = f"Summarize the text in the outermost `{_content_tag}` tag."
+
+    if context is None:
+        instruction = f"Summarize the text in the outermost `{_content_tag}` tag without referencing source or authorship."
 
     else:
         instruction = (
-            f"Any information provided in the outermost `{_context_tag}` tag is known. "
-            f"Take this into account when summarizing the text in the outermost `{_content_tag}` tag."
+            f"Summarize the text in the outermost `{_content_tag}` tag without referencing source or authorship. "
+            f"You can refer to any information from the outermost `{_context_tag}` as if it were already known but you cannot repeat it."
         )
 
     if additional_instruction is not None:
@@ -143,7 +145,7 @@ def summarize(
 
         else:
             rolling_summary = summarize(
-                f"{rolling_summary}\n{each_summary}",
+                f"{rolling_summary.strip()}\n{each_summary.strip()}",
                 *args,
                 additional_instruction=additional_instruction,
                 max_input_ratio=max_input_ratio,
@@ -285,7 +287,7 @@ def run_dialog() -> None:
 
 def run_summarize() -> None:
     # text = extract_text("/home/mark/Downloads/2308.10379.pdf")
-    text = extract_text("/home/mark/Downloads/2308.11432.pdf")
+    text = extract_text("/home/mark/Downloads/About – __countercloud.pdf")
 
     summary = summarize(text, model="gpt-3.5-turbo")
     print(summary)
