@@ -217,7 +217,10 @@ def respond(
 
         prompt = _response_prompt(instruction, recap, data, _recap_tag, _data_tag)
         messages = [{"role": "user", "content": prompt}]
+        last_len_tokenized_prompt = len_tokenized_prompt
         len_tokenized_prompt = get_token_len(messages, model_name)
+        if last_len_tokenized_prompt >= len_tokenized_prompt:
+            raise ValueError("Condensed prompt is not smaller than original prompt.")
 
     response_message = openai.ChatCompletion.create(*args, messages=messages, **kwargs)
     first_choice, = response_message.choices
