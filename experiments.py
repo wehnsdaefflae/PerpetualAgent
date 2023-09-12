@@ -72,7 +72,7 @@ def _summarize_prompt(
 
     context_element = _make_element(context, _context_tag)
 
-    instruction = f"Shorten the text in the outermost `{_content_tag}` tag."
+    instruction = f"Summarize the text in the outermost `{_content_tag}` tag."
 
     if context is not None:
         instruction += f" Leave out any of the information from the outermost `{_context_tag}` tag."
@@ -142,9 +142,16 @@ def summarize(
             rolling_summary = each_summary
 
         else:
-            last_context = f"{rolling_summary.strip()}\n{each_segment.strip()}"
+            last_context = (
+                _make_element(rolling_summary.strip(), "Overview") +
+                _make_element(each_segment.strip(), "NextSection")
+            )
+            this_content = (
+                _make_element(rolling_summary.strip(), "Overview") +
+                _make_element(each_summary.strip(), "NextSection")
+            )
             rolling_summary = summarize(
-                f"{rolling_summary.strip()}\n{each_summary.strip()}",
+                this_content,
                 *args,
                 additional_instruction=additional_instruction,
                 max_input_ratio=max_input_ratio,
@@ -154,9 +161,6 @@ def summarize(
                 _context_tag=_context_tag,
                 **kwargs
             )
-
-        if len(each_summary) >= segment_length and i < len(segments) - 1:
-            raise ValueError(f"Summary is longer {len(each_summary)} than segment length {segment_length}.")
 
         summaries.append(each_summary.strip())
 
@@ -276,8 +280,8 @@ def run_dialog() -> None:
 
 
 def run_summarize() -> None:
-    # text = extract_text("/home/mark/Downloads/2308.10379.pdf")
-    text = extract_text("/home/mark/Downloads/About – __countercloud.pdf")
+    text = extract_text("/home/mark/Downloads/2308.10379.pdf")
+    # text = extract_text("/home/mark/Downloads/About – __countercloud.pdf")
 
     summary = summarize(text, model="gpt-3.5-turbo")
     print(summary)
