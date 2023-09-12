@@ -5,7 +5,6 @@ import random
 import threading
 import time
 from dataclasses import asdict, dataclass
-from typing import Literal
 
 from new_attempt.model.agent.callbacks import Callbacks
 from new_attempt.model.agent.step_elements import Thought, Fact, Action, ActionArguments, ActionOutput, ActionWasSuccessful, Summary, IsFulfilled, ActionAttempt, Step
