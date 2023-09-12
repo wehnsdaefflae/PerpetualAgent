@@ -160,7 +160,6 @@ def summarize(
 
         summaries.append(each_summary.strip())
 
-
     return "\n\n".join(summaries)
 
 
