@@ -70,25 +70,24 @@ def _summarize_prompt(
         additional_instruction: str | None,
         _content_tag: str, _context_tag: str) -> str:
 
-    context_element = _make_element(context, _context_tag)
+    if context is None:
+        instruction = f"Summarize the text in the outermost `{_content_tag}` tag. Do not mention the tag."
 
-    instruction = f"Summarize the text in the outermost `{_content_tag}` tag."
-
-    if context is not None:
-        instruction += f" Leave out any of the information from the outermost `{_context_tag}` tag."
+    else:
+        instruction = (
+            f"Summarize the text in the outermost `{_content_tag}` tag as a seamless continuation "
+            f"of the text in the outermost `{_context_tag}` tag. Do not mention the tags."
+        )
 
     if additional_instruction is not None:
         instruction += f" {additional_instruction.strip()}"
 
-    summarize_prompt = (
-        f"{context_element}"
-        f"<{_content_tag}>\n"
-        f"{indent(content).rstrip()}\n"
-        f"</{_content_tag}>\n"
-        f"\n"
-        f"{instruction}"
+    prompt = (
+        _make_element(context, _context_tag) +
+        _make_element(content, _content_tag) +
+        instruction
     )
-    return summarize_prompt
+    return prompt
 
 
 def summarize(
@@ -127,8 +126,8 @@ def summarize(
         each_summary = summarize(
             each_segment,
             *args,
-            # context=rolling_summary,
-            context=last_context,
+            context=rolling_summary,
+            # context=last_context,
             additional_instruction=additional_instruction,
             max_input_ratio=max_input_ratio,
             segment_length=segment_length,
@@ -141,7 +140,7 @@ def summarize(
         if rolling_summary is None:
             rolling_summary = each_summary
 
-        else:
+        elif i < len(segments) - 1:
             last_context = (
                 _make_element(rolling_summary.strip(), "Overview") +
                 _make_element(each_segment.strip(), "NextSection")
@@ -182,7 +181,7 @@ def _response_prompt(
     prompt = (
             recap_element +
             data_element +
-            instruction.rstrip()
+            instruction.rstrip() + " (NOTE: Do not imitate the above XML syntax.)"
     )
     return prompt
 
@@ -216,11 +215,11 @@ def respond(
 
     while ratio_response_target < len_tokenized_prompt / max_tokens:
         sum_input_ratios = ratio_request + ratio_recap + ratio_data
-        ratio_request_is = len(request) / sum_input_ratios
+        ratio_request_is = len(request) / len_tokenized_prompt
         ratio_request_delta = ratio_request_is - ratio_request / sum_input_ratios
-        ratio_recap_is = 0. if recap is None else len(recap) / sum_input_ratios
+        ratio_recap_is = 0. if recap is None else len(recap) / len_tokenized_prompt
         ratio_recap_delta = ratio_recap_is - ratio_recap / sum_input_ratios
-        ratio_data_is = 0. if data is None else len(data) / sum_input_ratios
+        ratio_data_is = 0. if data is None else len(data) / len_tokenized_prompt
         ratio_data_delta = ratio_data_is - ratio_data / sum_input_ratios
 
         max_delta = max(ratio_request_delta, ratio_recap_delta, ratio_data_delta)
@@ -233,13 +232,9 @@ def respond(
             data = summarize(data, *args, context=recap, additional_instructions=focus_instruction, **kwargs)
 
         else:
-            focus_conversation = "Be very concise but preserve literal information and conversational character."
+            focus_conversation = "Preserve literal information and conversational character."
             recap_text = summarize(recap, *args, additional_instruction=focus_conversation, **kwargs)
-            recap = (
-                    f"<{_summary_tag}>\n" +
-                    f"{indent(recap_text.rstrip())}\n" +
-                    f"</{_summary_tag}>"
-            )
+            recap = _make_element(recap_text, _summary_tag)
 
         prompt = _response_prompt(request, recap, data, _recap_tag, _data_tag)
         messages = [{"role": "user", "content": prompt}]
@@ -248,21 +243,20 @@ def respond(
     response_message = openai.ChatCompletion.create(*args, messages=messages, **kwargs)
     first_choice, = response_message.choices
     first_message = first_choice.message
-    output = first_message.content
+    output_str = first_message.content
 
-    updated_recap_content = (
-            (f"" if recap is None else f"{recap}\n") +
-            "<UserRequest>\n" +
-            f"" if data is None else indent(_make_element(data.rstrip(), _data_tag)) +
-            f"{indent(request).rstrip()}\n" +
-            f"</UserRequest>\n" +
-            f"\n" +
-            f"<AssistantResponse>\n" +
-            f"{indent(output).rstrip()}\n" +
-            f"</AssistantResponse>"
+    input_str = (
+        ("" if data is None else indent(_make_element(data, _data_tag))) +
+        f"{indent(request).rstrip()}\n"
     )
 
-    return Response(output, updated_recap_content)
+    updated_recap_content = (
+            (f"" if recap is None else recap) +
+            _make_element(input_str, "UserRequest") +
+            _make_element(output_str, "AssistantResponse")
+    )
+
+    return Response(output_str, updated_recap_content)
 
 
 def run_dialog() -> None:
@@ -271,11 +265,8 @@ def run_dialog() -> None:
         instructions = input("User: ")
         response = respond(instructions, model="gpt-3.5-turbo", recap=summary)
         output = response.output
-        print(f"Assistant: {output}")
         summary = response.summary
-        print()
-        print(f"Summary:\n{summary}")
-        print()
+        print(f"Assistant: {output.rstrip()}")
         print()
 
 
@@ -290,8 +281,8 @@ def run_summarize() -> None:
 def main() -> None:
     openai.api_key_path = "resources/openai_api_key.txt"
 
-    # run_dialog()
-    run_summarize()
+    run_dialog()
+    # run_summarize()
 
 
 if __name__ == "__main__":
