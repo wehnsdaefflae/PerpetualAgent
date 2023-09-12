@@ -128,7 +128,7 @@ def summarize(
             each_segment,
             *args,
             # context=rolling_summary,
-            content=last_context,
+            context=last_context,
             additional_instruction=additional_instruction,
             max_input_ratio=max_input_ratio,
             segment_length=segment_length,
