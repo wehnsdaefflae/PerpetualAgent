@@ -51,8 +51,8 @@ def get_token_len(messages: list[dict[str, str]], model_name: str) -> int:
     return len_tokenized_prompt
 
 
-def indent(text: str, indent_str: str = "    ", times: int = 1) -> str:
-    return "\n".join(f"{indent_str * times}{line}" for line in text.splitlines())
+def indent(text: str, indent_str: str = "    ") -> str:
+    return "\n".join(f"{indent_str}{line}" for line in text.splitlines())
 
 
 @dataclass(frozen=True)
@@ -73,12 +73,11 @@ def _summarize_prompt(
     context_element = _make_element(context, _context_tag)
 
     if context is None:
-        instruction = f"Summarize the text in the outermost `{_content_tag}` tag without referencing source or authorship."
+        instruction = f"Shorten the text in the outermost `{_content_tag}` tag."
 
     else:
         instruction = (
-            f"Summarize the text in the outermost `{_content_tag}` tag without referencing source or authorship. "
-            f"You can refer to any information from the outermost `{_context_tag}` as if it were already known but you cannot repeat it."
+            f"Shorten the text in the outermost `{_content_tag}` tag but leave out any information already mentioned in the outermost `{_context_tag}` tag."
         )
 
     if additional_instruction is not None:
@@ -198,11 +197,10 @@ def respond(
         _data_tag: str = "AdditionalData",
         **kwargs: any) -> Response:
 
-    # normalize ;)
-    sum_ratios = ratio_request + (0. if recap is None else ratio_recap) + (0. if data is None else ratio_data) + ratio_response
-    ratio_request_target = ratio_request / sum_ratios
-    ratio_recap_target = ratio_recap / sum_ratios
-    ratio_data_target = ratio_data / sum_ratios
+    ratio_recap = 0. if recap is None else ratio_recap
+    ratio_data = 0. if data is None else ratio_data
+
+    sum_ratios = ratio_request + ratio_recap + ratio_data + ratio_response
     ratio_response_target = ratio_response / sum_ratios
 
     model_name = kwargs["model"]
@@ -212,63 +210,55 @@ def respond(
     messages = [{"role": "user", "content": prompt}]
     len_tokenized_prompt = get_token_len(messages, model_name) * (1. + _margin)
 
-    if len_tokenized_prompt / max_tokens < ratio_response_target:
-        response_message = openai.ChatCompletion.create(*args, messages=messages, **kwargs)
-        first_choice, = response_message.choices
-        first_message = first_choice.message
-        output = first_message.content
+    while ratio_response_target < len_tokenized_prompt / max_tokens:
+        sum_input_ratios = ratio_request + ratio_recap + ratio_data
+        ratio_request_is = len(request) / sum_input_ratios
+        ratio_request_delta = ratio_request_is - ratio_request / sum_input_ratios
+        ratio_recap_is = 0. if recap is None else len(recap) / sum_input_ratios
+        ratio_recap_delta = ratio_recap_is - ratio_recap / sum_input_ratios
+        ratio_data_is = 0. if data is None else len(data) / sum_input_ratios
+        ratio_data_delta = ratio_data_is - ratio_data / sum_input_ratios
 
-        updated_recap_content = (
-                (f"" if recap is None else f"{recap}\n") +
-                "<UserRequest>\n" +
-                f"{indent(request).rstrip()}\n" +
-                f"</UserRequest>\n" +
-                f"\n" +
-                f"<AssistantResponse>\n" +
-                f"{indent(output).rstrip()}\n" +
-                f"</AssistantResponse>"
-        )
+        max_delta = max(ratio_request_delta, ratio_recap_delta, ratio_data_delta)
 
-        return Response(output, updated_recap_content)
+        if ratio_request_delta == max_delta:
+            request = summarize(request, *args, context=recap, **kwargs)
 
-    print("condensing...")
-    ratio_request_is = len(request) / len_tokenized_prompt
-    ratio_request_delta = ratio_request_is - ratio_request_target
-    ratio_recap_is = 0. if recap is None else len(recap) / len_tokenized_prompt
-    ratio_recap_delta = ratio_recap_is - ratio_recap_target
-    ratio_data_is = 0. if data is None else len(data) / len_tokenized_prompt
-    ratio_data_delta = ratio_data_is - ratio_data_target
+        elif ratio_data_delta == max_delta:
+            focus_instruction = f"Translate it into concise Pyton code. Focus on information relevant to the following request: \"{request.strip()}\""
+            data = summarize(data, *args, context=recap, additional_instructions=focus_instruction, **kwargs)
 
-    max_delta = max(ratio_request_delta, ratio_recap_delta, ratio_data_delta)
+        else:
+            focus_conversation = "Be very concise but preserve literal information and conversational character."
+            recap_text = summarize(recap, *args, additional_instruction=focus_conversation, **kwargs)
+            recap = (
+                    f"<{_summary_tag}>\n" +
+                    f"{indent(recap_text.rstrip())}\n" +
+                    f"</{_summary_tag}>"
+            )
 
-    if ratio_request_delta == max_delta:
-        request = summarize(request, *args, context=recap, **kwargs)
+        prompt = _response_prompt(request, recap, data, _recap_tag, _data_tag)
+        messages = [{"role": "user", "content": prompt}]
+        len_tokenized_prompt = get_token_len(messages, model_name) * (1. + _margin)
 
-    elif ratio_recap_delta == max_delta:
-        focus_conversation = "Be very concise but preserve literal information and conversational character."
-        recap_text = summarize(recap, *args, additional_instruction=focus_conversation, **kwargs)
-        recap = (
-                f"<{_summary_tag}>\n" +
-                f"{indent(recap_text.rstrip())}\n" +
-                f"</{_summary_tag}>"
-        )
+    response_message = openai.ChatCompletion.create(*args, messages=messages, **kwargs)
+    first_choice, = response_message.choices
+    first_message = first_choice.message
+    output = first_message.content
 
-    else:
-        focus_instruction = f"Focus on information relevant to the following request: \"{request.strip()}\""
-        data = summarize(data, *args, context=recap, additional_instructions=focus_instruction, **kwargs)
+    updated_recap_content = (
+            (f"" if recap is None else f"{recap}\n") +
+            "<UserRequest>\n" +
+            f"" if data is None else indent(_make_element(data.rstrip(), _data_tag)) +
+            f"{indent(request).rstrip()}\n" +
+            f"</UserRequest>\n" +
+            f"\n" +
+            f"<AssistantResponse>\n" +
+            f"{indent(output).rstrip()}\n" +
+            f"</AssistantResponse>"
+    )
 
-    response = respond(
-        request, *args,
-        data=data,
-        recap=recap,
-        ratio_request=ratio_request, ratio_recap=ratio_recap, ratio_data=ratio_data, ratio_response=ratio_response,
-        _margin=_margin,
-        _recap_tag=_recap_tag,
-        _summary_tag=_summary_tag,
-        _data_tag=_data_tag,
-        **kwargs)
-
-    return response
+    return Response(output, updated_recap_content)
 
 
 def run_dialog() -> None:
