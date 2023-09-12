@@ -72,13 +72,10 @@ def _summarize_prompt(
 
     context_element = _make_element(context, _context_tag)
 
-    if context is None:
-        instruction = f"Shorten the text in the outermost `{_content_tag}` tag."
+    instruction = f"Shorten the text in the outermost `{_content_tag}` tag."
 
-    else:
-        instruction = (
-            f"Shorten the text in the outermost `{_content_tag}` tag but leave out any information already mentioned in the outermost `{_context_tag}` tag."
-        )
+    if context is not None:
+        instruction += f" Leave out any of the information from the outermost `{_context_tag}` tag."
 
     if additional_instruction is not None:
         instruction += f" {additional_instruction.strip()}"
@@ -122,6 +119,7 @@ def summarize(
 
     print("segmenting...")
     rolling_summary = None
+    last_context = None
     summaries = list()
     segments = list(segment_text(content, segment_length=segment_length))
     for i, each_segment in enumerate(segments):
@@ -129,7 +127,8 @@ def summarize(
         each_summary = summarize(
             each_segment,
             *args,
-            context=rolling_summary,
+            # context=rolling_summary,
+            content=last_context,
             additional_instruction=additional_instruction,
             max_input_ratio=max_input_ratio,
             segment_length=segment_length,
@@ -143,6 +142,7 @@ def summarize(
             rolling_summary = each_summary
 
         else:
+            last_context = f"{rolling_summary.strip()}\n{each_segment.strip()}"
             rolling_summary = summarize(
                 f"{rolling_summary.strip()}\n{each_summary.strip()}",
                 *args,
@@ -159,6 +159,7 @@ def summarize(
             raise ValueError(f"Summary is longer {len(each_summary)} than segment length {segment_length}.")
 
         summaries.append(each_summary.strip())
+
 
     return "\n\n".join(summaries)
 
@@ -225,7 +226,7 @@ def respond(
             request = summarize(request, *args, context=recap, **kwargs)
 
         elif ratio_data_delta == max_delta:
-            focus_instruction = f"Translate it into concise Pyton code. Focus on information relevant to the following request: \"{request.strip()}\""
+            focus_instruction = f"Transcribe this into a more concise format. Ignore information that is not relevant to the request \"{request.strip()}\""
             data = summarize(data, *args, context=recap, additional_instructions=focus_instruction, **kwargs)
 
         else:
