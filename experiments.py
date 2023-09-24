@@ -118,7 +118,6 @@ def summarize(
 
     print("segmenting...")
     rolling_summary = None
-    last_context = None
     summaries = list()
     segments = list(segment_text(content, segment_length=segment_length))
     for i, each_segment in enumerate(segments):
@@ -126,8 +125,7 @@ def summarize(
         each_summary = summarize(
             each_segment,
             *args,
-            # context=rolling_summary,
-            context=last_context,
+            context=rolling_summary,
             additional_instruction=additional_instruction,
             max_input_ratio=max_input_ratio,
             segment_length=segment_length,
@@ -141,7 +139,6 @@ def summarize(
             rolling_summary = each_summary
 
         else:
-            last_context = f"{rolling_summary.strip()}\n{each_segment.strip()}"
             rolling_summary = summarize(
                 f"{rolling_summary.strip()}\n{each_summary.strip()}",
                 *args,
@@ -166,27 +163,25 @@ def _response_prompt(
         instruction: str,
         recap: str | None,
         data: str | None,
-        _recap_tag: str, _data_tag: str,
-        _instruction_tag: str = "Instruction") -> str:
+        _recap_tag: str, _data_tag: str) -> str:
 
     recap_element = _make_element(recap, _recap_tag)
     data_element = _make_element(data, _data_tag)
-    instruction_element = _make_element(instruction.rstrip() + " (NOTE: Do not imitate the above XML syntax.)", _instruction_tag)
 
     prompt = (
             recap_element +
             data_element +
-            instruction_element
+            instruction.rstrip() + " (NOTE: Do not imitate the above XML syntax.)"
     )
 
     return prompt
 
 
 def respond(
-        request: str, *args: any,
+        instruction: str, *args: any,
         data: str | None = None,
         recap: str | None = None,
-        ratio_request: float = .1,
+        ratio_instruction: float = .1,
         ratio_recap: float = .3,
         ratio_data: float = .3,
         ratio_response: float = .3,
@@ -199,32 +194,32 @@ def respond(
     ratio_recap = 0. if recap is None else ratio_recap
     ratio_data = 0. if data is None else ratio_data
 
-    sum_ratios = ratio_request + ratio_recap + ratio_data + ratio_response
+    sum_ratios = ratio_instruction + ratio_recap + ratio_data + ratio_response
     ratio_response_target = ratio_response / sum_ratios
 
     model_name = kwargs["model"]
     max_tokens = get_max_tokens(model_name)
 
-    prompt = _response_prompt(request, recap, data, _recap_tag, _data_tag)
+    prompt = _response_prompt(instruction, recap, data, _recap_tag, _data_tag)
     messages = [{"role": "user", "content": prompt}]
     len_tokenized_prompt = get_token_len(messages, model_name) * (1. + _margin)
 
+    sum_input_ratios = ratio_instruction + ratio_recap + ratio_data
     while ratio_response_target < len_tokenized_prompt / max_tokens:
-        sum_input_ratios = ratio_request + ratio_recap + ratio_data
-        ratio_request_is = len(request) / len_tokenized_prompt
-        ratio_request_delta = ratio_request_is - ratio_request / sum_input_ratios
+        ratio_instruction_is = len(instruction) / len_tokenized_prompt
+        ratio_instruction_delta = ratio_instruction_is - ratio_instruction / sum_input_ratios
         ratio_recap_is = 0. if recap is None else len(recap) / len_tokenized_prompt
         ratio_recap_delta = ratio_recap_is - ratio_recap / sum_input_ratios
         ratio_data_is = 0. if data is None else len(data) / len_tokenized_prompt
         ratio_data_delta = ratio_data_is - ratio_data / sum_input_ratios
 
-        max_delta = max(ratio_request_delta, ratio_recap_delta, ratio_data_delta)
+        max_delta = max(ratio_instruction_delta, ratio_recap_delta, ratio_data_delta)
 
-        if ratio_request_delta == max_delta:
-            request = summarize(request, *args, context=recap, **kwargs)
+        if ratio_instruction_delta == max_delta:
+            instruction = summarize(instruction, *args, context=recap, **kwargs)
 
         elif ratio_data_delta == max_delta:
-            focus_instruction = f"Transcribe this into a more concise format. Ignore information that is not relevant to the request \"{request.strip()}\""
+            focus_instruction = f"Transcribe this into a more concise format. Ignore information that is not relevant to the instruction \"{instruction.strip()}\""
             data = summarize(data, *args, context=recap, additional_instructions=focus_instruction, **kwargs)
 
         else:
@@ -232,7 +227,7 @@ def respond(
             recap_text = summarize(recap, *args, additional_instruction=focus_conversation, **kwargs)
             recap = _make_element(recap_text, _summary_tag)
 
-        prompt = _response_prompt(request, recap, data, _recap_tag, _data_tag)
+        prompt = _response_prompt(instruction, recap, data, _recap_tag, _data_tag)
         messages = [{"role": "user", "content": prompt}]
         len_tokenized_prompt = get_token_len(messages, model_name) * (1. + _margin)
 
@@ -245,7 +240,7 @@ def respond(
             (f"" if recap is None else recap) +
             _make_element(
                 (f"" if data is None else _make_element(data.rstrip(), _data_tag)) +
-                _make_element(request.rstrip(), "Instruction"),
+                _make_element(instruction.rstrip(), "Instruction"),
                 "UserRequest") +
             _make_element(output.rstrip(), "AssistantResponse")
     )
