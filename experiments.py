@@ -70,25 +70,24 @@ def _summarize_prompt(
         additional_instruction: str | None,
         _content_tag: str, _context_tag: str) -> str:
 
-    context_element = _make_element(context, _context_tag)
+    if context is None:
+        instruction = f"Summarize the text in the outermost `{_content_tag}` tag. Do not mention the tag."
 
-    instruction = f"Shorten the text in the outermost `{_content_tag}` tag."
-
-    if context is not None:
-        instruction += f" Leave out any of the information from the outermost `{_context_tag}` tag."
+    else:
+        instruction = (
+            f"Summarize the text in the outermost `{_content_tag}` tag as a seamless continuation "
+            f"of the text in the outermost `{_context_tag}` tag. Do not mention the tags."
+        )
 
     if additional_instruction is not None:
         instruction += f" {additional_instruction.strip()}"
 
-    summarize_prompt = (
-        f"{context_element}"
-        f"<{_content_tag}>\n"
-        f"{indent(content).rstrip()}\n"
-        f"</{_content_tag}>\n"
-        f"\n"
-        f"{instruction}"
+    prompt = (
+        _make_element(context, _context_tag) +
+        _make_element(content, _content_tag) +
+        instruction
     )
-    return summarize_prompt
+    return prompt
 
 
 def summarize(
@@ -155,9 +154,6 @@ def summarize(
                 **kwargs
             )
 
-        if len(each_summary) >= segment_length and i < len(segments) - 1:
-            raise ValueError(f"Summary is longer {len(each_summary)} than segment length {segment_length}.")
-
         summaries.append(each_summary.strip())
 
     return "\n\n".join(summaries)
@@ -178,7 +174,7 @@ def _response_prompt(
     prompt = (
             recap_element +
             data_element +
-            instruction.rstrip()
+            instruction.rstrip() + " (NOTE: Do not imitate the above XML syntax.)"
     )
     return prompt
 
@@ -212,11 +208,11 @@ def respond(
 
     while ratio_response_target < len_tokenized_prompt / max_tokens:
         sum_input_ratios = ratio_request + ratio_recap + ratio_data
-        ratio_request_is = len(request) / sum_input_ratios
+        ratio_request_is = len(request) / len_tokenized_prompt
         ratio_request_delta = ratio_request_is - ratio_request / sum_input_ratios
-        ratio_recap_is = 0. if recap is None else len(recap) / sum_input_ratios
+        ratio_recap_is = 0. if recap is None else len(recap) / len_tokenized_prompt
         ratio_recap_delta = ratio_recap_is - ratio_recap / sum_input_ratios
-        ratio_data_is = 0. if data is None else len(data) / sum_input_ratios
+        ratio_data_is = 0. if data is None else len(data) / len_tokenized_prompt
         ratio_data_delta = ratio_data_is - ratio_data / sum_input_ratios
 
         max_delta = max(ratio_request_delta, ratio_recap_delta, ratio_data_delta)
@@ -231,11 +227,7 @@ def respond(
         else:
             focus_conversation = "Be very concise but preserve literal information and conversational character."
             recap_text = summarize(recap, *args, additional_instruction=focus_conversation, **kwargs)
-            recap = (
-                    f"<{_summary_tag}>\n" +
-                    f"{indent(recap_text.rstrip())}\n" +
-                    f"</{_summary_tag}>"
-            )
+            recap = _make_element(recap_text, _summary_tag)
 
         prompt = _response_prompt(request, recap, data, _recap_tag, _data_tag)
         messages = [{"role": "user", "content": prompt}]
@@ -263,17 +255,14 @@ def run_dialog() -> None:
         instructions = input("User: ")
         response = respond(instructions, model="gpt-3.5-turbo", recap=summary)
         output = response.output
-        print(f"Assistant: {output}")
         summary = response.summary
-        print()
-        print(f"Summary:\n{summary}")
-        print()
+        print(f"Assistant: {output.rstrip()}")
         print()
 
 
 def run_summarize() -> None:
-    # text = extract_text("/home/mark/Downloads/2308.10379.pdf")
-    text = extract_text("/home/mark/Downloads/About – __countercloud.pdf")
+    text = extract_text("/home/mark/Downloads/2308.10379.pdf")
+    # text = extract_text("/home/mark/Downloads/About – __countercloud.pdf")
 
     summary = summarize(text, model="gpt-3.5-turbo")
     print(summary)
