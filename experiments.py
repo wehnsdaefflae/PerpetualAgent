@@ -247,17 +247,13 @@ def respond(
     output = first_message.content
 
     updated_recap_content = (
-            (f"" if recap is None else f"{recap}\n") +
-            "<UserRequest>\n" +
-            f"" if data is None else indent(_make_element(data.rstrip(), _data_tag)) +
-            f"{indent(request).rstrip()}\n" +
-            f"</UserRequest>\n" +
-            f"\n" +
-            f"<AssistantResponse>\n" +
-            f"{indent(output).rstrip()}\n" +
-            f"</AssistantResponse>"
+            (f"" if recap is None else recap) +
+            _make_element(
+                (f"" if data is None else _make_element(data.rstrip(), _data_tag)) +
+                _make_element(request.rstrip(), "Instruction"),
+                "UserRequest") +
+            _make_element(output.rstrip(), "AssistantResponse")
     )
-
     return Response(output, updated_recap_content)
 
 
