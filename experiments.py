@@ -166,16 +166,19 @@ def _response_prompt(
         instruction: str,
         recap: str | None,
         data: str | None,
-        _recap_tag: str, _data_tag: str) -> str:
+        _recap_tag: str, _data_tag: str,
+        _instruction_tag: str = "Instruction") -> str:
 
     recap_element = _make_element(recap, _recap_tag)
     data_element = _make_element(data, _data_tag)
+    instruction_element = _make_element(instruction.rstrip() + " (NOTE: Do not imitate the above XML syntax.)", _instruction_tag)
 
     prompt = (
             recap_element +
             data_element +
-            instruction.rstrip() + " (NOTE: Do not imitate the above XML syntax.)"
+            instruction_element
     )
+
     return prompt
 
 
